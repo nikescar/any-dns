@@ -200,6 +200,11 @@ impl DnsProcessor {
         let mut buffer = [0; 1024];
         let (size, from) = self.recv_from(&mut buffer)?;
         let query = buffer[..size].to_vec();
+        let parse_result = Packet::parse(&query);
+        if let Err(err) = parse_result {
+            eprintln!("Failed to parse query {:?}, {}", query, err);
+            return Ok(());
+        };
         if from == self.icann_resolver {
             self.respond_icann_to_client(query)?;
         } else {
