@@ -8,7 +8,9 @@ description = "Lightweight DNS server with Middleware support for non-ICANN doma
 repository = "https://github.com/severinalexb/any-dns/"
 readme = "README.md"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+exclude = [
+    "main.rs",
+]
 
 [dependencies]
 ctrlc = "3.4.2"
