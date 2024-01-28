@@ -21,12 +21,15 @@ impl CustomHandler for MyHandler {
      * Only resolve 1 custom domain 7fmjpcuuzf54hw18bsgi3zihzyh4awseeuq5tmojefaezjbd64cy.
      */
     fn lookup(&mut self, query: &Vec<u8>) -> std::prelude::v1::Result<Vec<u8>, Box<dyn Error>> {
+        // Parse query with any dns library. Here, we use `simple_dns``.
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
-        if question.qname.to_string() != "7fmjpcuuzf54hw18bsgi3zihzyh4awseeuq5tmojefaezjbd64cy" || question.qtype != QTYPE::TYPE(simple_dns::TYPE::A) {
+        if question.qname.to_string() != "any.dns" || question.qtype != simple_dns::QTYPE::TYPE(simple_dns::TYPE::A) {
+            // Fallback to ICANN if it is not `7fmjpcuuzf54hw18bsgi3zihzyh4awseeuq5tmojefaezjbd64cy`
             return Err("Not Implemented".into());
         };
 
+        // Construct DNS reply
         let mut reply = Packet::new_reply(packet.id());
         reply.questions.push(question.clone());
         let ip: Ipv4Addr = "37.27.13.182".parse().unwrap();
