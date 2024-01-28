@@ -37,8 +37,3 @@ impl ThreadSafeStore {
     }
 }
 
-// impl Clone for ThreadSafeStore {
-//     fn clone(&self) -> Self {
-//         Self { pending_queries: Arc::clone(&self.pending_queries) }
-//     }
-// }

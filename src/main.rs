@@ -5,7 +5,7 @@ mod server;
 mod dns_thread;
 mod pending_queries;
 mod custom_handler;
-mod example;
+
 use std::{cmp::Ordering, error::Error, net::Ipv4Addr, sync::{atomic::AtomicBool, Arc}, thread::sleep, time::Duration};
 
 use any_dns::{CustomHandler, Builder};

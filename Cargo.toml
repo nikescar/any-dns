@@ -2,6 +2,11 @@
 name = "any-dns"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+keywords = ["dns"]
+description = "Lightweight DNS server with Middleware support for non-ICANN domains."
+repository = "https://github.com/severinalexb/any-dns/"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
