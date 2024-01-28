@@ -3,7 +3,7 @@
 use simple_dns::{Packet, Name, Question};
 use std::{
     collections::HashMap,
-    net::{SocketAddr, UdpSocket}, str::FromStr, thread::sleep, time::{Duration, Instant}, sync::{Arc, Mutex}, ops::Range,
+    net::{SocketAddr, UdpSocket}, str::FromStr, thread::sleep, time::{Duration, Instant}, sync::{mpsc::channel, Arc, Mutex}, ops::Range,
 };
 
 use crate::{dns_thread::DnsThread, pending_queries::{self, PendingQuery, ThreadSafeStore}, custom_handler::{HandlerHolder, EmptyHandler, CustomHandler}};
@@ -102,6 +102,16 @@ impl AnyDNS {
         for thread in self.threads {
             thread.join()
         };
+    }
+
+    /**
+     * Waits on CTRL+C
+     */
+    pub fn wait_on_ctrl_c(&self) {
+        let (tx, rx) = channel();
+        ctrlc::set_handler(move || tx.send(()).expect("Could not send signal on channel."))
+            .expect("Error setting Ctrl-C handler");
+        rx.recv().expect("Could not receive from channel.");
     }
 }
 
