@@ -1,5 +1,8 @@
 # any-dns
 
+![Crates.io Version](https://img.shields.io/crates/v/any-dns)
+
+
 Lightweight DNS server with Middleware support for non-ICANN domains made in Rust.
 
 ## Example
