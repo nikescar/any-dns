@@ -59,4 +59,4 @@ fn main(){
 }
 ```
 
-Check it out: [http://any.dns/](http://any.dns/).
+Check it out: `nslookup any.dns 127.0.0.1`
