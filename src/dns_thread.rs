@@ -182,13 +182,17 @@ impl DnsProcessor {
 
         if self.verbose {
             let elapsed = pending.received_at.elapsed();
-            let question = pending_packet.questions.get(0).unwrap().clone();
-            println!(
-                "- Reply {:?} {:?} ICANN within {}ms",
-                question.qname.to_string(),
-                question.qtype,
-                elapsed.as_millis()
-            );
+            let question = pending_packet.questions.get(0);
+            if question.is_some() {
+                let question = question.unwrap().clone();
+                println!(
+                    "- Reply {:?} {:?} ICANN within {}ms",
+                    question.qname.to_string(),
+                    question.qtype,
+                    elapsed.as_millis()
+                );
+            };
+
         }
 
         Ok(())
