@@ -5,6 +5,11 @@ mod server;
 mod dns_thread;
 mod pending_queries;
 mod custom_handler;
+mod dns_thread_async;
+mod async_dns_socket;
+mod pending_request;
+mod async_custom_handler;
+mod async_server;
 
 use std::{cmp::Ordering, error::Error, net::Ipv4Addr, sync::{atomic::AtomicBool, Arc}, thread::sleep, time::Duration};
 
@@ -40,9 +45,8 @@ impl CustomHandler for MyHandler {
 }
 
 
-fn main() -> Result<()> {
-
-
+#[tokio::main]
+async fn main() -> Result<()> {
 
     println!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
     let handler = MyHandler{};
