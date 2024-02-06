@@ -7,6 +7,5 @@ mod query_id_manager;
 mod server;
 
 pub use crate::custom_handler::{CustomHandler, CustomHandlerError};
-pub use crate::server::{Builder, AnyDNS};
-pub use crate::dns_socket::{DnsSocket};
-
+pub use crate::dns_socket::DnsSocket;
+pub use crate::server::{AnyDNS, Builder};

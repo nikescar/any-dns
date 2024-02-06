@@ -37,7 +37,7 @@ pub struct DnsSocket {
     handler: HandlerHolder,
     icann_fallback: SocketAddr,
     id_manager: QueryIdManager,
-    verbose: bool
+    verbose: bool,
 }
 
 impl DnsSocket {
@@ -48,7 +48,7 @@ impl DnsSocket {
         listening: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
-        verbose: bool
+        verbose: bool,
     ) -> tokio::io::Result<Self> {
         let socket = UdpSocket::bind(listening).await?;
         Ok(Self {
@@ -57,7 +57,7 @@ impl DnsSocket {
             handler,
             icann_fallback,
             id_manager: QueryIdManager::new(),
-            verbose
+            verbose,
         })
     }
 

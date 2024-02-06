@@ -64,16 +64,14 @@ impl AnyDNS {
         listener: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
-        verbose: bool
+        verbose: bool,
     ) -> tokio::io::Result<Self> {
         let mut socket = DnsSocket::new(listener, icann_fallback, handler, verbose).await?;
         let join_handle = tokio::spawn(async move {
             socket.receive_loop().await;
         });
 
-        let server = Self {
-            join_handle,
-        };
+        let server = Self { join_handle };
 
         Ok(server)
     }
@@ -90,7 +88,7 @@ impl AnyDNS {
      */
     pub async fn wait_on_ctrl_c(&self) {
         match tokio::signal::ctrl_c().await {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(err) => {
                 eprintln!("Unable to listen for shutdown signal Ctrl+C: {}", err);
             }

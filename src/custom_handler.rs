@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use dyn_clone::DynClone;
 use std::fmt::Debug;
 
-
 use crate::dns_socket::DnsSocket;
 
 #[derive(thiserror::Error, Debug)]
@@ -146,7 +145,7 @@ mod tests {
             "0.0.0.0:18293".parse().unwrap(),
             icann_fallback,
             holder1.clone(),
-            true
+            true,
         )
         .await
         .unwrap();

@@ -6,11 +6,9 @@ mod server;
 
 use std::{error::Error, net::Ipv4Addr};
 
-use any_dns::{DnsSocket, Builder, CustomHandler, CustomHandlerError};
+use any_dns::{Builder, CustomHandler, CustomHandlerError, DnsSocket};
 use async_trait::async_trait;
 use simple_dns::{Packet, ResourceRecord, QTYPE, TYPE};
-
-
 
 #[derive(Clone, Debug)]
 struct MyHandler {}
@@ -29,12 +27,13 @@ impl CustomHandler for MyHandler {
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
 
-        let is_any_dot_dns = question.qname.to_string() != "any.dns" || question.qtype != QTYPE::TYPE(TYPE::A);
+        let is_any_dot_dns =
+            question.qname.to_string() != "any.dns" || question.qtype != QTYPE::TYPE(TYPE::A);
         if is_any_dot_dns {
             Ok(self.construct_reply(query)) // Reply with A record IP
         } else {
             Err(CustomHandlerError::Unhandled) // Fallback to ICANN
-        }        
+        }
     }
 }
 
