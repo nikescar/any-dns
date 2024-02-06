@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build()
         .await?;
 
-    anydns.wait_on_ctrl_c();
+    anydns.wait_on_ctrl_c().await;
     println!("Got it! Exiting...");
     anydns.stop();
 
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build()
         .await?;
 
-    anydns.wait_on_ctrl_c();
+    anydns.wait_on_ctrl_c().await;
     println!("Got it! Exiting...");
     anydns.stop();
 

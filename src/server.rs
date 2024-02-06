@@ -88,11 +88,13 @@ impl AnyDNS {
     /**
      * Waits on CTRL+C
      */
-    pub fn wait_on_ctrl_c(&self) {
-        let (tx, rx) = channel();
-        ctrlc::set_handler(move || tx.send(()).expect("Could not send signal on channel."))
-            .expect("Error setting Ctrl-C handler");
-        rx.recv().expect("Could not receive from channel.");
+    pub async fn wait_on_ctrl_c(&self) {
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {},
+            Err(err) => {
+                eprintln!("Unable to listen for shutdown signal Ctrl+C: {}", err);
+            }
+        }
     }
 }
 
