@@ -1,21 +1,17 @@
-//! Main server implementation
+#![allow(unused)]
 
-use simple_dns::{Packet, Name, Question};
-use tokio::{net::unix::pipe::Receiver, sync::oneshot};
-use std::{
-    collections::HashMap,
-    net::{SocketAddr, UdpSocket}, str::FromStr, thread::sleep, time::{Duration, Instant}, sync::{mpsc::channel, Arc, Mutex}, ops::Range,
+use std::{net::SocketAddr, sync::mpsc::channel};
+
+use crate::{
+    custom_handler::{CustomHandler, EmptyHandler, HandlerHolder},
+    dns_socket::DnsSocket,
 };
-
-use crate::{ dns_socket::AsyncDnsSocket, custom_handler::{HandlerHolder, EmptyHandler, CustomHandler}};
-
-
 
 pub struct Builder {
     icann_resolver: SocketAddr,
     listen: SocketAddr,
     handler: HandlerHolder,
-    verbose: bool
+    verbose: bool,
 }
 
 impl Builder {
@@ -24,7 +20,7 @@ impl Builder {
             icann_resolver: SocketAddr::from(([192, 168, 1, 1], 53)),
             listen: SocketAddr::from(([0, 0, 0, 0], 53)),
             handler: HandlerHolder::new(EmptyHandler::new()),
-            verbose: false
+            verbose: false,
         }
     }
 
@@ -53,40 +49,30 @@ impl Builder {
     }
 
     // /** Build and start server. */
-    pub async fn build(self) -> tokio::io::Result<AsyncAnyDNS> {
-        AsyncAnyDNS::new(self.listen, self.icann_resolver, self.handler).await
-    }
-
-    /** Calculates the dns packet id range for each thread. */
-    fn calculate_id_range(thread_count: u16, i: u16) -> Range<u16> {
-        let bucket_size = u16::MAX / thread_count;
-        Range{
-            start: i * bucket_size,
-            end: (i + 1) * bucket_size -1
-        }
+    pub async fn build(self) -> tokio::io::Result<AnyDNS> {
+        AnyDNS::new(self.listen, self.icann_resolver, self.handler).await
     }
 }
 
 #[derive(Debug)]
-pub struct AsyncAnyDNS {
-    socket: AsyncDnsSocket,
-    join_handle: tokio::task::JoinHandle<()>
+pub struct AnyDNS {
+    join_handle: tokio::task::JoinHandle<()>,
 }
 
-impl AsyncAnyDNS {
-
-    pub async fn new(listener: SocketAddr, icann_fallback: SocketAddr, handler: HandlerHolder) -> tokio::io::Result<Self> {
-        let socket = AsyncDnsSocket::new(listener, icann_fallback, handler).await?;
-        let mut receive_socket = socket.clone();
+impl AnyDNS {
+    pub async fn new(
+        listener: SocketAddr,
+        icann_fallback: SocketAddr,
+        handler: HandlerHolder,
+    ) -> tokio::io::Result<Self> {
+        let mut socket = DnsSocket::new(listener, icann_fallback, handler).await?;
         let join_handle = tokio::spawn(async move {
-            receive_socket.receive_loop().await;
+            socket.receive_loop().await;
         });
 
         let server = Self {
-            socket,
-            join_handle
+            join_handle,
         };
-
 
         Ok(server)
     }
@@ -109,20 +95,11 @@ impl AsyncAnyDNS {
     }
 }
 
-// impl Default for AsyncAnyDNS {
-//     fn default() -> Self {
-//         let builder = Builder::new();
-//         builder.build()
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, net::SocketAddr, thread::sleep, time::Duration};
-    use simple_dns::{Name, Packet, Question};
+    use std::{net::SocketAddr, thread::sleep, time::Duration};
 
-    use crate::{custom_handler::EmptyHandler, server::AsyncAnyDNS, server::Builder};
-
+    use crate::server::Builder;
 
     #[tokio::test]
     async fn run() {
@@ -146,6 +123,5 @@ mod tests {
         // let result = socket.request(&query, &to, Duration::from_secs(5)).await.unwrap();
         // let reply = Packet::parse(&result).unwrap();
         // dbg!(reply);
-
     }
 }

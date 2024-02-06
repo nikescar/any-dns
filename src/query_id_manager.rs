@@ -1,5 +1,10 @@
-use std::{net::SocketAddr, time::Instant, collections::HashMap, sync::{Mutex, Arc}};
+#![allow(unused)]
 
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 
 /**
  * Thread-safe QueryIdManager.
@@ -19,21 +24,16 @@ impl QueryIdManager {
         let mut locked = self.ids.lock().expect("Lock success");
         let current = match locked.get(server) {
             Some(val) => val.clone(),
-            None => 0
+            None => 0,
         };
-        let next = if current == u16::MAX {
-            0
-        } else {
-            current + 1
-        };
+        let next = if current == u16::MAX { 0 } else { current + 1 };
         locked.insert(server.clone(), next);
         next
     }
 
     pub fn new() -> Self {
         Self {
-            ids: Arc::new(Mutex::new(HashMap::new()))
+            ids: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
-

@@ -1,9 +1,12 @@
 #![allow(unused)]
 
+mod custom_handler;
 mod dns_socket;
 mod pending_request;
-mod custom_handler;
-mod server;
 mod query_id_manager;
+mod server;
 
-// pub use crate::custom_handler::{CustomHandler};
+pub use crate::custom_handler::{CustomHandler, CustomHandlerError};
+pub use crate::server::{Builder, AnyDNS};
+pub use crate::dns_socket::{DnsSocket};
+
