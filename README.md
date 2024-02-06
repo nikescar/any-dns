@@ -55,11 +55,8 @@ struct MyHandler {}
 #[async_trait] // <-- Don't forget
 impl CustomHandler for MyHandler {
     // `lookup` is called for every dns query
-    async fn lookup(
-        &mut self,
-        query: &Vec<u8>,
-        _socket: DnsSocket,
-    ) -> Result<Vec<u8>, CustomHandlerError> {
+    async fn lookup(&mut self, query: &Vec<u8>, socket: DnsSocket) 
+    -> Result<Vec<u8>, CustomHandlerError> {
         // Parse query with any dns library
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
