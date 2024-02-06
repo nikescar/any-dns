@@ -4,13 +4,25 @@ use async_trait::async_trait;
 
 use crate::async_dns_socket::AsyncDnsSocket;
 
+
+#[derive(thiserror::Error, Debug)]
+pub enum CustomHandlerError {
+    #[error(transparent)]
+    IO(#[from] crate::async_dns_socket::RequestError),
+
+    #[error("Query is not processed by handler. Fallback to ICANN. {0}")]
+    Unhandled(&'static str),
+}
+
+
+
 /**
  * Trait to implement to make AnyDns use a custom handler.
  * Important: Handler must be clonable so it can be used by multiple threads.
  */
 #[async_trait]
-pub trait CustomHandler: DynClone + Send {
-    async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, Box<dyn Error>>;
+pub trait CustomHandler: DynClone + Send + Sync {
+    async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, CustomHandlerError>;
 }
 
 /**
@@ -44,7 +56,7 @@ impl HandlerHolder {
         HandlerHolder { func: Box::new(f) }
     }
 
-    pub async fn call(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub async fn call(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, CustomHandlerError> {
         self.func.lookup(query, socket).await
     }
 }
@@ -60,18 +72,18 @@ impl EmptyHandler {
 
 #[async_trait]
 impl CustomHandler for EmptyHandler {
-    async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, Box<dyn Error>> {
-        Err("Not implemented".into())
+    async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, CustomHandlerError> {
+        Err(CustomHandlerError::Unhandled("Not implemented".into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{error::Error, net::SocketAddr};
     use async_trait::async_trait;
     use crate::{async_dns_socket::AsyncDnsSocket, async_custom_handler::EmptyHandler};
 
-    use super::{CustomHandler, HandlerHolder};
+    use super::{CustomHandler, CustomHandlerError, HandlerHolder};
 
     struct ClonableStruct {
         value: String,
@@ -101,9 +113,9 @@ mod tests {
     }
     #[async_trait]
     impl CustomHandler for TestHandler {
-        async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, Box<dyn Error>> {
+        async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, CustomHandlerError> {
             println!("value {}", self.value.value);
-            Err("Not implemented".into())
+            Err(CustomHandlerError::Unhandled("Not implemented".into()))
         }
     }
 
@@ -112,8 +124,9 @@ mod tests {
         let mut test1 = TestHandler::new("test1");
         let holder1 = HandlerHolder::new(test1);
         let mut cloned = holder1.clone();
+        let icann_fallback: SocketAddr = "8.8.8.8:53".parse().unwrap();
 
-        let socket = AsyncDnsSocket::new("0.0.0.0:18293".parse().unwrap(), holder1.clone()).await.unwrap();
+        let socket = AsyncDnsSocket::new("0.0.0.0:18293".parse().unwrap(), icann_fallback, holder1.clone()).await.unwrap();
         let result = cloned.call(&vec![], socket).await;
         assert!(result.is_err());
     }

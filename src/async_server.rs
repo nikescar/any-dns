@@ -54,7 +54,7 @@ impl Builder {
 
     // /** Build and start server. */
     pub async fn build(self) -> tokio::io::Result<AsyncAnyDNS> {
-        AsyncAnyDNS::new(self.listen, self.handler).await
+        AsyncAnyDNS::new(self.listen, self.icann_resolver, self.handler).await
     }
 
     /** Calculates the dns packet id range for each thread. */
@@ -75,8 +75,8 @@ pub struct AsyncAnyDNS {
 
 impl AsyncAnyDNS {
 
-    pub async fn new(listener: SocketAddr, handler: HandlerHolder) -> tokio::io::Result<Self> {
-        let socket = AsyncDnsSocket::new(listener, handler).await?;
+    pub async fn new(listener: SocketAddr, icann_fallback: SocketAddr, handler: HandlerHolder) -> tokio::io::Result<Self> {
+        let socket = AsyncDnsSocket::new(listener, icann_fallback, handler).await?;
         let mut receive_socket = socket.clone();
         let join_handle = tokio::spawn(async move {
             receive_socket.receive_loop().await;
@@ -118,7 +118,7 @@ impl AsyncAnyDNS {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, net::SocketAddr, time::Duration};
+    use std::{error::Error, net::SocketAddr, thread::sleep, time::Duration};
     use simple_dns::{Name, Packet, Question};
 
     use crate::{async_custom_handler::EmptyHandler, async_server::AsyncAnyDNS, async_server::Builder};
@@ -126,8 +126,13 @@ mod tests {
 
     #[tokio::test]
     async fn run() {
-        let listening: SocketAddr = "0.0.0.0:34254".parse().unwrap();
-        let dns = Builder::new().build().await.unwrap();
+        let listening: SocketAddr = "0.0.0.0:34255".parse().unwrap();
+        let dns = Builder::new().listen(listening).build().await.unwrap();
+        println!("Started");
+        sleep(Duration::from_secs(5));
+        println!("Stop");
+        dns.stop();
+        println!("Stopped");
 
         // let mut query = Packet::new_query(0);
         // let qname = Name::new("google.ch").unwrap();

@@ -1,9 +1,9 @@
-use std::{ net::SocketAddr, sync::{atomic::AtomicBool, Arc}, time::{Duration, Instant}};
+use std::{ error::Error, net::SocketAddr, sync::{atomic::AtomicBool, Arc}, time::{Duration, Instant}};
 
 use simple_dns::{Packet, SimpleDnsError};
 use tokio::{net::UdpSocket, sync::{broadcast, oneshot}};
 
-use crate::{async_custom_handler::HandlerHolder, pending_request::{PendingRequest, PendingRequestStore}};
+use crate::{async_custom_handler::{CustomHandlerError, HandlerHolder}, pending_request::{PendingRequest, PendingRequestStore}};
 
 #[derive(Debug, Clone)]
 struct DnsPacket {
@@ -12,18 +12,17 @@ struct DnsPacket {
     from: SocketAddr
 }
 
-
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum RequestError {
-    // Dns packet parse error
     #[error("Dns packet parse error: {0}")]
     Parse(#[from] SimpleDnsError),
 
     #[error(transparent)]
     IO(#[from] tokio::io::Error),
 
-    #[error("No answer received within timeout. {0}")]
-    NoAnswer(#[from] oneshot::error::RecvError),
+    // #[error("Oneshot channel broke. {0}")]
+    // BrokenChannel(#[from] oneshot::error::RecvError),
 
     #[error("No answer received within timeout. {0}")]
     Timeout(#[from] tokio::time::error::Elapsed),
@@ -36,7 +35,8 @@ pub enum RequestError {
 pub struct AsyncDnsSocket {
     socket: Arc<UdpSocket>,
     pending: PendingRequestStore,
-    handler: HandlerHolder
+    handler: HandlerHolder,
+    icann_fallback: SocketAddr
 }
 
 impl AsyncDnsSocket {
@@ -44,12 +44,13 @@ impl AsyncDnsSocket {
     /**
      * Creates a new DNS socket
      */
-    pub async fn new(listening: SocketAddr, handler: HandlerHolder)-> tokio::io::Result<Self> {
+    pub async fn new(listening: SocketAddr, icann_fallback: SocketAddr, handler: HandlerHolder)-> tokio::io::Result<Self> {
         let socket = UdpSocket::bind(listening).await?;
         Ok(Self {
             socket: Arc::new(socket),
             pending: PendingRequestStore::new(),
-            handler
+            handler,
+            icann_fallback
         })
     }
 
@@ -89,12 +90,12 @@ impl AsyncDnsSocket {
 
         let is_reply = packet.questions.len() == 0;
         if is_reply {
-            eprintln!("Reply with no associated request {:?}", packet);
+            eprintln!("Reply with no associated a query {:?}", packet);
             return Ok(());
         };
 
         // New query
-        self.on_query(&data).await;
+        self.on_query(&data, &from).await?;
 
         Ok(())
     }
@@ -102,14 +103,32 @@ impl AsyncDnsSocket {
     /**
      * New query received.
      */
-    async fn on_query(&mut self, query: &Vec<u8>) {
-        self.handler.call(query, self.clone());
+    async fn on_query(&mut self, query: &Vec<u8>, from: &SocketAddr) -> Result<(), RequestError> {
+        let result = self.handler.call(query, self.clone()).await;
+        if let Ok(reply) = result {
+            // All good. Handler handled the query
+            self.send_to(&reply, from).await?;
+            return Ok(());
+        };
+
+
+        match result.unwrap_err() {
+            CustomHandlerError::Unhandled(e) => {
+                // Fallback to ICANN
+                let reply = self.forward_to_icann(query, Duration::from_secs(4)).await?;
+                self.send_to(&reply, &from).await?;
+            },
+            CustomHandlerError::IO(e) => {
+                return Err(e);
+            }
+        };
+        Ok(())
     }
 
     /**
      * Send dns request
      */
-    pub async fn request(&mut self, query: &Vec<u8>, to: &SocketAddr, timeout: Duration) -> Result<Vec<u8>, RequestError> {
+    pub async fn forward(&mut self, query: &Vec<u8>, to: &SocketAddr, timeout: Duration) -> Result<Vec<u8>, RequestError> {
         let packet = Packet::parse(&query)?;
         let (tx, rx) = oneshot::channel::<Vec<u8>>();
         let request = PendingRequest {
@@ -122,6 +141,7 @@ impl AsyncDnsSocket {
         self.pending.insert(request);
         self.send_to(query, to).await?;
 
+        // TODO: Manage query ids
 
         // Wait on response
         let reply = tokio::time::timeout(timeout, rx).await;
@@ -129,8 +149,16 @@ impl AsyncDnsSocket {
             // Timeout, remove pending again
             self.pending.remove(&packet.id(), &to);
         };
-        let reply = reply??;
+        let reply = reply?.unwrap();
         Ok(reply)
+    }
+
+
+    /**
+     * Forward query to icann
+     */
+    pub async fn forward_to_icann(&mut self, query: &Vec<u8>, timeout: Duration)  -> Result<Vec<u8>, RequestError> {
+        self.forward(query, &self.icann_fallback.clone(), timeout).await
     }
 
 }
@@ -150,8 +178,9 @@ mod tests {
     #[tokio::test]
     async fn run_processor() {
         let listening: SocketAddr = "0.0.0.0:34254".parse().unwrap();
+        let icann_fallback: SocketAddr = "8.8.8.8:53".parse().unwrap();
         let handler = HandlerHolder::new(EmptyHandler::new());
-        let mut socket = AsyncDnsSocket::new(listening, handler).await.unwrap();
+        let mut socket = AsyncDnsSocket::new(listening, icann_fallback, handler).await.unwrap();
 
         let mut run_socket = socket.clone();
         tokio::spawn(async move {
@@ -167,7 +196,7 @@ mod tests {
 
         let query = query.build_bytes_vec_compressed().unwrap();
         let to: SocketAddr = "8.8.8.8:53".parse().unwrap();
-        let result = socket.request(&query, &to, Duration::from_secs(5)).await.unwrap();
+        let result = socket.forward(&query, &to, Duration::from_secs(5)).await.unwrap();
         let reply = Packet::parse(&result).unwrap();
         dbg!(reply);
 
