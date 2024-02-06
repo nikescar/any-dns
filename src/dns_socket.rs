@@ -37,6 +37,7 @@ pub struct DnsSocket {
     handler: HandlerHolder,
     icann_fallback: SocketAddr,
     id_manager: QueryIdManager,
+    verbose: bool
 }
 
 impl DnsSocket {
@@ -47,6 +48,7 @@ impl DnsSocket {
         listening: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
+        verbose: bool
     ) -> tokio::io::Result<Self> {
         let socket = UdpSocket::bind(listening).await?;
         Ok(Self {
@@ -55,6 +57,7 @@ impl DnsSocket {
             handler,
             icann_fallback,
             id_manager: QueryIdManager::new(),
+            verbose
         })
     }
 
@@ -71,7 +74,9 @@ impl DnsSocket {
     pub async fn receive_loop(&mut self) {
         loop {
             if let Err(err) = self.receive_datagram().await {
-                eprintln!("Error while trying to receive {err}");
+                if self.verbose {
+                    eprintln!("Error while trying to receive {err}");
+                }
             }
         }
     }
@@ -92,7 +97,10 @@ impl DnsSocket {
 
         let is_reply = packet.questions.len() == 0;
         if is_reply {
-            eprintln!("Reply with no associated a query {:?}", packet);
+            if self.verbose {
+                eprintln!("Reply with no associated a query {:?}", packet);
+            }
+
             return Ok(());
         };
 
@@ -102,21 +110,24 @@ impl DnsSocket {
             let start = Instant::now();
             let query_packet = Packet::parse(&data).unwrap();
             let question = query_packet.questions.first().unwrap();
-            match socket.on_query(&data, &from).await {
-                Ok(_) => {
-                    println!(
-                        "Processed query {} {:?} within {}ms",
-                        question.qname,
-                        question.qtype,
-                        start.elapsed().as_millis()
-                    );
-                }
-                Err(err) => {
-                    eprintln!(
-                        "Failed to respond to query {} {:?}: {}",
-                        question.qname, question.qtype, err
-                    );
-                }
+            let query_result = socket.on_query(&data, &from).await;
+            if socket.verbose {
+                match query_result {
+                    Ok(_) => {
+                        println!(
+                            "Processed query {} {:?} within {}ms",
+                            question.qname,
+                            question.qtype,
+                            start.elapsed().as_millis()
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "Failed to respond to query {} {:?}: {}",
+                            question.qname, question.qtype, err
+                        );
+                    }
+                };
             };
         });
 
@@ -221,7 +232,7 @@ mod tests {
         let listening: SocketAddr = "0.0.0.0:34254".parse().unwrap();
         let icann_fallback: SocketAddr = "8.8.8.8:53".parse().unwrap();
         let handler = HandlerHolder::new(EmptyHandler::new());
-        let mut socket = DnsSocket::new(listening, icann_fallback, handler)
+        let mut socket = DnsSocket::new(listening, icann_fallback, handler, true)
             .await
             .unwrap();
 

@@ -50,7 +50,7 @@ impl Builder {
 
     // /** Build and start server. */
     pub async fn build(self) -> tokio::io::Result<AnyDNS> {
-        AnyDNS::new(self.listen, self.icann_resolver, self.handler).await
+        AnyDNS::new(self.listen, self.icann_resolver, self.handler, self.verbose).await
     }
 }
 
@@ -64,8 +64,9 @@ impl AnyDNS {
         listener: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
+        verbose: bool
     ) -> tokio::io::Result<Self> {
-        let mut socket = DnsSocket::new(listener, icann_fallback, handler).await?;
+        let mut socket = DnsSocket::new(listener, icann_fallback, handler, verbose).await?;
         let join_handle = tokio::spawn(async move {
             socket.receive_loop().await;
         });

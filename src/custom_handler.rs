@@ -146,6 +146,7 @@ mod tests {
             "0.0.0.0:18293".parse().unwrap(),
             icann_fallback,
             holder1.clone(),
+            true
         )
         .await
         .unwrap();
