@@ -1,19 +1,19 @@
 //! Main server implementation
 
 use simple_dns::{Packet, Name, Question};
+use tokio::{net::unix::pipe::Receiver, sync::oneshot};
 use std::{
     collections::HashMap,
     net::{SocketAddr, UdpSocket}, str::FromStr, thread::sleep, time::{Duration, Instant}, sync::{mpsc::channel, Arc, Mutex}, ops::Range,
 };
 
-use crate::{dns_thread::DnsThread, pending_queries::{self, PendingQuery, ThreadSafeStore}, custom_handler::{HandlerHolder, EmptyHandler, CustomHandler}};
+use crate::{ dns_socket::AsyncDnsSocket, custom_handler::{HandlerHolder, EmptyHandler, CustomHandler}};
 
 
 
 pub struct Builder {
     icann_resolver: SocketAddr,
     listen: SocketAddr,
-    thread_count: u8,
     handler: HandlerHolder,
     verbose: bool
 }
@@ -23,7 +23,6 @@ impl Builder {
         Self {
             icann_resolver: SocketAddr::from(([192, 168, 1, 1], 53)),
             listen: SocketAddr::from(([0, 0, 0, 0], 53)),
-            thread_count: 1,
             handler: HandlerHolder::new(EmptyHandler::new()),
             verbose: false
         }
@@ -41,12 +40,6 @@ impl Builder {
         self
     }
 
-    /// Set the number of threads used. Default: 1.
-    pub fn threads(mut self, thread_count: u8) -> Self {
-        self.thread_count = thread_count;
-        self
-    }
-
     /// Makes the server log verbosely.
     pub fn verbose(mut self, verbose: bool) -> Self {
         self.verbose = verbose;
@@ -59,21 +52,9 @@ impl Builder {
         self
     }
 
-    /** Build and start server. */
-    pub fn build(self) -> AnyDNS {
-        let socket = UdpSocket::bind(self.listen).expect("Listen address should be available");
-        socket.set_read_timeout(Some(Duration::from_millis(500))); // So the DNS can be stopped.
-        let pending_queries = ThreadSafeStore::new();
-        let mut threads = vec![];
-        for i in 0..self.thread_count {
-            let id_range = Self::calculate_id_range(self.thread_count as u16, i as u16);
-            let thread = DnsThread::new(&socket, &self.icann_resolver, &pending_queries, id_range, &self.handler, self.verbose);
-            threads.push(thread);
-        }
-
-        AnyDNS {
-            threads
-        }
+    // /** Build and start server. */
+    pub async fn build(self) -> tokio::io::Result<AsyncAnyDNS> {
+        AsyncAnyDNS::new(self.listen, self.icann_resolver, self.handler).await
     }
 
     /** Calculates the dns packet id range for each thread. */
@@ -87,21 +68,34 @@ impl Builder {
 }
 
 #[derive(Debug)]
-pub struct AnyDNS {
-    threads: Vec<DnsThread>,
+pub struct AsyncAnyDNS {
+    socket: AsyncDnsSocket,
+    join_handle: tokio::task::JoinHandle<()>
 }
 
-impl AnyDNS {
+impl AsyncAnyDNS {
+
+    pub async fn new(listener: SocketAddr, icann_fallback: SocketAddr, handler: HandlerHolder) -> tokio::io::Result<Self> {
+        let socket = AsyncDnsSocket::new(listener, icann_fallback, handler).await?;
+        let mut receive_socket = socket.clone();
+        let join_handle = tokio::spawn(async move {
+            receive_socket.receive_loop().await;
+        });
+
+        let server = Self {
+            socket,
+            join_handle
+        };
+
+
+        Ok(server)
+    }
+
     /**
      * Stops the server and consumes the instance.
      */
-    pub fn join(mut self) {
-        for thread in self.threads.iter_mut() {
-            thread.stop();
-        };
-        for thread in self.threads {
-            thread.join()
-        };
+    pub fn stop(self) {
+        self.join_handle.abort();
     }
 
     /**
@@ -115,9 +109,43 @@ impl AnyDNS {
     }
 }
 
-impl Default for AnyDNS {
-    fn default() -> Self {
-        let builder = Builder::new();
-        builder.build()
+// impl Default for AsyncAnyDNS {
+//     fn default() -> Self {
+//         let builder = Builder::new();
+//         builder.build()
+//     }
+// }
+
+#[cfg(test)]
+mod tests {
+    use std::{error::Error, net::SocketAddr, thread::sleep, time::Duration};
+    use simple_dns::{Name, Packet, Question};
+
+    use crate::{custom_handler::EmptyHandler, server::AsyncAnyDNS, server::Builder};
+
+
+    #[tokio::test]
+    async fn run() {
+        let listening: SocketAddr = "0.0.0.0:34255".parse().unwrap();
+        let dns = Builder::new().listen(listening).build().await.unwrap();
+        println!("Started");
+        sleep(Duration::from_secs(5));
+        println!("Stop");
+        dns.stop();
+        println!("Stopped");
+
+        // let mut query = Packet::new_query(0);
+        // let qname = Name::new("google.ch").unwrap();
+        // let qtype = simple_dns::QTYPE::TYPE(simple_dns::TYPE::A);
+        // let qclass = simple_dns::QCLASS::CLASS(simple_dns::CLASS::IN);
+        // let question = Question::new(qname, qtype, qclass, false);
+        // query.questions = vec![question];
+
+        // let query = query.build_bytes_vec_compressed().unwrap();
+        // let to: SocketAddr = "8.8.8.8:53".parse().unwrap();
+        // let result = socket.request(&query, &to, Duration::from_secs(5)).await.unwrap();
+        // let reply = Packet::parse(&result).unwrap();
+        // dbg!(reply);
+
     }
 }

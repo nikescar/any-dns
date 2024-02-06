@@ -6,21 +6,22 @@ use tokio::sync::oneshot;
 pub struct PendingRequest {
     pub to: SocketAddr,
     pub sent_at: Instant,
-    pub query_id: u16,
+    pub original_query_id: u16,
+    pub forward_query_id: u16,
     pub tx: oneshot::Sender<Vec<u8>>
 }
 
 #[derive(Debug, Clone, Hash, PartialEq)]
 struct PendingRequestKey {
     to: SocketAddr,
-    query_id: u16
+    forward_query_id: u16
 }
 
 impl Eq for PendingRequestKey {}
 
 
 /**
- * Multi-threading safe store.
+ * Thread safe pending request store.
  * Use `.clone()` to give each thread one store struct.
  * The data will stay shared.
  */
@@ -33,16 +34,16 @@ impl PendingRequestStore {
     pub fn insert(&mut self, request: PendingRequest) {
         let mut locked = self.pending.lock().expect("Lock success");
         let key = PendingRequestKey {
-            query_id: request.query_id.clone(),
+            forward_query_id: request.forward_query_id.clone(),
             to: request.to.clone()
         };
         locked.insert(key, request);
     }
 
-    pub fn remove(&mut self, id: &u16, from: &SocketAddr) -> Option<PendingRequest> {
+    pub fn remove_by_forward_id(&mut self, forward_query_id: &u16, from: &SocketAddr) -> Option<PendingRequest> {
         let mut locked = self.pending.lock().expect("Lock success");
         let key = PendingRequestKey {
-            query_id: id.clone(),
+            forward_query_id: forward_query_id.clone(),
             to: from.clone()
         };
         locked.remove(&key)

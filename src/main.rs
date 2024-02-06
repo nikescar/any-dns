@@ -1,37 +1,35 @@
-#![allow(unused)]
+// #![allow(unused)]
 
-mod error;
-mod server;
-mod dns_thread;
-mod pending_queries;
-mod custom_handler;
-mod dns_thread_async;
-mod async_dns_socket;
+mod dns_socket;
 mod pending_request;
-mod async_custom_handler;
-mod async_server;
+mod custom_handler;
+mod server;
+mod query_id_manager;
 
 use std::{cmp::Ordering, error::Error, net::Ipv4Addr, sync::{atomic::AtomicBool, Arc}, thread::sleep, time::Duration};
 
-use any_dns::{CustomHandler, Builder};
-use error::Result;
-use server::AnyDNS;
+use custom_handler::{CustomHandler, CustomHandlerError};
+use dns_socket::{AsyncDnsSocket, RequestError};
+use async_trait::async_trait;
 use simple_dns::{Packet, PacketFlag, ResourceRecord, QTYPE};
+
+use crate::server::Builder;
 
 #[derive(Clone, Debug)]
 struct MyHandler {}
 
+#[async_trait]
 impl CustomHandler for MyHandler {
     /**
-     * Only resolve 1 custom domain 7fmjpcuuzf54hw18bsgi3zihzyh4awseeuq5tmojefaezjbd64cy.
+     * Only resolve 1 custom domain any.dns.
      */
-    fn lookup(&mut self, query: &Vec<u8>) -> std::prelude::v1::Result<Vec<u8>, Box<dyn Error>> {
+    async fn lookup(&mut self, query: &Vec<u8>, socket: AsyncDnsSocket) -> Result<Vec<u8>, CustomHandlerError> {
         // Parse query with any dns library. Here, we use `simple_dns``.
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
         if question.qname.to_string() != "any.dns" || question.qtype != simple_dns::QTYPE::TYPE(simple_dns::TYPE::A) {
-            // Fallback to ICANN if it is not `7fmjpcuuzf54hw18bsgi3zihzyh4awseeuq5tmojefaezjbd64cy`
-            return Err("Not Implemented".into());
+            // Fallback to ICANN if it is not `any.dns`
+            return Err(CustomHandlerError::Unhandled("Not interested"));
         };
 
         // Construct DNS reply
@@ -46,15 +44,15 @@ impl CustomHandler for MyHandler {
 
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
     let handler = MyHandler{};
-    let anydns = Builder::new().handler(handler).verbose(true).build();
+    let anydns = Builder::new().handler(handler).verbose(true).icann_resolver("8.8.8.8:53".parse().unwrap()).build().await?;
 
     anydns.wait_on_ctrl_c();
     println!("Got it! Exiting...");
-    anydns.join();
+    anydns.stop();
 
     Ok(())
 }

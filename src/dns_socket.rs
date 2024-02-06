@@ -3,14 +3,7 @@ use std::{ error::Error, net::SocketAddr, sync::{atomic::AtomicBool, Arc}, time:
 use simple_dns::{Packet, SimpleDnsError};
 use tokio::{net::UdpSocket, sync::{broadcast, oneshot}};
 
-use crate::{async_custom_handler::{CustomHandlerError, HandlerHolder}, pending_request::{PendingRequest, PendingRequestStore}};
-
-#[derive(Debug, Clone)]
-struct DnsPacket {
-    id: u16,
-    data: Vec<u8>,
-    from: SocketAddr
-}
+use crate::{custom_handler::{CustomHandlerError, HandlerHolder}, pending_request::{PendingRequest, PendingRequestStore}, query_id_manager::QueryIdManager};
 
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
@@ -21,10 +14,7 @@ pub enum RequestError {
     #[error(transparent)]
     IO(#[from] tokio::io::Error),
 
-    // #[error("Oneshot channel broke. {0}")]
-    // BrokenChannel(#[from] oneshot::error::RecvError),
-
-    #[error("No answer received within timeout. {0}")]
+    #[error("No answer received within timeout.")]
     Timeout(#[from] tokio::time::error::Elapsed),
 }
 
@@ -36,7 +26,8 @@ pub struct AsyncDnsSocket {
     socket: Arc<UdpSocket>,
     pending: PendingRequestStore,
     handler: HandlerHolder,
-    icann_fallback: SocketAddr
+    icann_fallback: SocketAddr,
+    id_manager: QueryIdManager
 }
 
 impl AsyncDnsSocket {
@@ -50,7 +41,8 @@ impl AsyncDnsSocket {
             socket: Arc::new(socket),
             pending: PendingRequestStore::new(),
             handler,
-            icann_fallback
+            icann_fallback,
+            id_manager: QueryIdManager::new()
         })
     }
 
@@ -58,8 +50,7 @@ impl AsyncDnsSocket {
      * Send message to address
      */
     pub async fn send_to(&self, buffer: &[u8], target: &SocketAddr) -> tokio::io::Result<usize> {
-        let res = self.socket.send_to(buffer, target).await;
-        res
+        self.socket.send_to(buffer, target).await
     }
 
     /**
@@ -67,21 +58,20 @@ impl AsyncDnsSocket {
      */
     pub async fn receive_loop(&mut self) {
         loop {
-            if let Err(err) = self.receive().await {
+            if let Err(err) = self.receive_datagram().await {
                 eprintln!("Error while trying to receive {err}");
             }
         };
     }
 
-    async fn receive(&mut self) -> Result<(), RequestError> {
+    async fn receive_datagram(&mut self) -> Result<(), RequestError> {
         let mut buffer = [0; 1024];
-        println!("Wait to receive data");
         let (size, from) = self.socket.recv_from(&mut buffer).await?;
         let mut data = buffer.to_vec();
         data.drain((size + 1)..data.len());
         let packet = Packet::parse(&data)?;
         
-        let pending = self.pending.remove(&packet.id(), &from);
+        let pending = self.pending.remove_by_forward_id(&packet.id(), &from);
         if pending.is_some() {
             let query = pending.unwrap();
             query.tx.send(data).unwrap();
@@ -95,7 +85,23 @@ impl AsyncDnsSocket {
         };
 
         // New query
-        self.on_query(&data, &from).await?;
+        let mut socket = self.clone();
+        tokio::spawn(async move {
+            let start = Instant::now();
+            let query_packet = Packet::parse(&data).unwrap();
+            let question = query_packet.questions.first().unwrap();
+            match socket.on_query(&data, &from).await {
+                Ok(_) => {
+                    println!("Processed query {} {:?} within {}ms", question.qname, question.qtype, start.elapsed().as_millis());
+                },
+                Err(err) => {
+                    eprintln!("Failed to respond to query {} {:?}: {}", question.qname, question.qtype, err);
+                }
+            };
+
+
+        });
+
 
         Ok(())
     }
@@ -115,7 +121,7 @@ impl AsyncDnsSocket {
         match result.unwrap_err() {
             CustomHandlerError::Unhandled(e) => {
                 // Fallback to ICANN
-                let reply = self.forward_to_icann(query, Duration::from_secs(4)).await?;
+                let reply = self.forward_to_icann(query, Duration::from_secs(2)).await?;
                 self.send_to(&reply, &from).await?;
             },
             CustomHandlerError::IO(e) => {
@@ -126,30 +132,44 @@ impl AsyncDnsSocket {
     }
 
     /**
+     * Replaces the id of the dns packet.
+     */
+    fn replace_packet_id(&self, packet: &mut Vec<u8>, new_id: u16) {
+        let id_bytes = new_id.to_be_bytes();
+        std::mem::replace(&mut packet[0], id_bytes[0]);
+        std::mem::replace(&mut packet[1], id_bytes[1]);
+    }
+
+    /**
      * Send dns request
      */
     pub async fn forward(&mut self, query: &Vec<u8>, to: &SocketAddr, timeout: Duration) -> Result<Vec<u8>, RequestError> {
-        let packet = Packet::parse(&query)?;
+        let mut packet = Packet::parse(&query)?;
         let (tx, rx) = oneshot::channel::<Vec<u8>>();
+        let forward_id = self.id_manager.get_next(to);
+        let original_id = packet.id();
         let request = PendingRequest {
-            query_id: packet.id(),
+            original_query_id: original_id,
+            forward_query_id: forward_id,
             sent_at: Instant::now(),
             to: to.clone(),
             tx
         };
 
-        self.pending.insert(request);
-        self.send_to(query, to).await?;
+        let mut query = packet.build_bytes_vec_compressed()?;
+        self.replace_packet_id(&mut query, forward_id);
 
-        // TODO: Manage query ids
+        self.pending.insert(request);
+        self.send_to(&query, to).await?;
 
         // Wait on response
         let reply = tokio::time::timeout(timeout, rx).await;
         if reply.is_err() {
             // Timeout, remove pending again
-            self.pending.remove(&packet.id(), &to);
+            self.pending.remove_by_forward_id(&forward_id, &to);
         };
-        let reply = reply?.unwrap();
+        let mut reply = reply?.unwrap();
+        self.replace_packet_id(&mut reply, original_id);
         Ok(reply)
     }
 
@@ -171,7 +191,7 @@ mod tests {
     use std::{error::Error, net::SocketAddr, time::Duration};
     use simple_dns::{Name, Packet, Question};
 
-    use crate::async_custom_handler::{EmptyHandler, HandlerHolder};
+    use crate::custom_handler::{EmptyHandler, HandlerHolder};
 
     use super::AsyncDnsSocket;
 
