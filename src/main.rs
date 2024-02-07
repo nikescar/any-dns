@@ -28,7 +28,7 @@ impl CustomHandler for MyHandler {
         let question = packet.questions.get(0).expect("Valid query");
 
         let is_any_dot_dns =
-            question.qname.to_string() != "any.dns" || question.qtype != QTYPE::TYPE(TYPE::A);
+            question.qname.to_string() == "any.dns" || question.qtype == QTYPE::TYPE(TYPE::A);
         if is_any_dot_dns {
             Ok(self.construct_reply(query)) // Reply with A record IP
         } else {
