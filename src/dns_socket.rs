@@ -138,24 +138,37 @@ impl DnsSocket {
      * New query received.
      */
     async fn on_query(&mut self, query: &Vec<u8>, from: &SocketAddr) -> Result<(), RequestError> {
+        match self.query(query).await {
+            Ok(reply) => {
+                self.send_to(&reply, from).await?;
+                Ok(())
+            },
+            Err(e) => {
+                Err(e)
+            }
+        }
+    }
+
+    /**
+     * Query this dns for data
+     */
+    pub async fn query(&mut self, query: &Vec<u8>) -> Result<Vec<u8>, RequestError> {
         let result = self.handler.call(query, self.clone()).await;
         if let Ok(reply) = result {
             // All good. Handler handled the query
-            self.send_to(&reply, from).await?;
-            return Ok(());
+            return Ok(reply);
         };
 
         match result.unwrap_err() {
             CustomHandlerError::Unhandled => {
                 // Fallback to ICANN
                 let reply = self.forward_to_icann(query, Duration::from_secs(2)).await?;
-                self.send_to(&reply, &from).await?;
+                Ok(reply)
             }
             CustomHandlerError::IO(e) => {
-                return Err(e);
+                Err(e)
             }
-        };
-        Ok(())
+        }
     }
 
     /**
