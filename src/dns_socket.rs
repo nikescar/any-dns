@@ -85,7 +85,9 @@ impl DnsSocket {
         let mut buffer = [0; 1024];
         let (size, from) = self.socket.recv_from(&mut buffer).await?;
         let mut data = buffer.to_vec();
-        data.drain((size + 1)..data.len());
+        if data.len() > size {
+            data.drain((size + 1)..data.len());
+        }
         let packet = Packet::parse(&data)?;
 
         let pending = self.pending.remove_by_forward_id(&packet.id(), &from);
@@ -109,7 +111,14 @@ impl DnsSocket {
         tokio::spawn(async move {
             let start = Instant::now();
             let query_packet = Packet::parse(&data).unwrap();
-            let question = query_packet.questions.first().unwrap();
+
+            let question = query_packet.questions.first();
+            if question.is_none() {
+                // Query without a question. Ignore
+                eprintln!("Query with no associated a question {:?}", query_packet);
+                return;
+            };
+            let question = question.unwrap();
             let query_result = socket.on_query(&data, &from).await;
             if socket.verbose {
                 match query_result {
