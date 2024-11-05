@@ -7,6 +7,7 @@ use std::{
 
 use simple_dns::{Packet, SimpleDnsError};
 use tokio::{net::UdpSocket, sync::oneshot};
+use tracing::Level;
 
 use crate::{
     custom_handler::{CustomHandlerError, HandlerHolder},
@@ -37,7 +38,6 @@ pub struct DnsSocket {
     handler: HandlerHolder,
     icann_fallback: SocketAddr,
     id_manager: QueryIdManager,
-    verbose: bool,
 }
 
 impl DnsSocket {
@@ -48,7 +48,6 @@ impl DnsSocket {
         listening: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
-        verbose: bool,
     ) -> tokio::io::Result<Self> {
         let socket = UdpSocket::bind(listening).await?;
         Ok(Self {
@@ -57,7 +56,6 @@ impl DnsSocket {
             handler,
             icann_fallback,
             id_manager: QueryIdManager::new(),
-            verbose,
         })
     }
 
@@ -74,9 +72,7 @@ impl DnsSocket {
     pub async fn receive_loop(&mut self) {
         loop {
             if let Err(err) = self.receive_datagram().await {
-                if self.verbose {
-                    eprintln!("Error while trying to receive {err}");
-                }
+                tracing::error!("Error while trying to receive {err}");
             }
         }
     }
@@ -89,9 +85,12 @@ impl DnsSocket {
             data.drain((size + 1)..data.len());
         }
         let packet = Packet::parse(&data)?;
+        let span = tracing::span!(Level::TRACE, "", query_id = packet.id());
+        let guard = span.enter();
 
         let pending = self.pending.remove_by_forward_id(&packet.id(), &from);
         if pending.is_some() {
+            tracing::debug!("Received response from forward dns server. Send back to client.");
             let query = pending.unwrap();
             query.tx.send(data).unwrap();
             return Ok(());
@@ -99,10 +98,10 @@ impl DnsSocket {
 
         let is_reply = packet.questions.len() == 0;
         if is_reply {
-            if self.verbose {
-                eprintln!("Reply with no associated a query {:?}", packet);
-            }
-
+            tracing::debug!(
+                "Received reply without an associated query {:?}. Ignore.",
+                packet
+            );
             return Ok(());
         };
 
@@ -111,19 +110,27 @@ impl DnsSocket {
         tokio::spawn(async move {
             let start = Instant::now();
             let query_packet = Packet::parse(&data).unwrap();
+            let span = tracing::span!(Level::TRACE, "", query_id = query_packet.id());
+            let guard = span.enter();
 
             let question = query_packet.questions.first();
             if question.is_none() {
-                // Query without a question. Ignore
-                eprintln!("Query with no associated a question {:?}", query_packet);
+                tracing::debug!(
+                    "Query with no associated a question {:?}. Ignore.",
+                    query_packet
+                );
                 return;
             };
             let question = question.unwrap();
+            tracing::debug!(
+                "Received new query from client {} {:?}",
+                question.qname,
+                question.qtype
+            );
             let query_result = socket.on_query(&data, &from).await;
-            if socket.verbose {
                 match query_result {
                     Ok(_) => {
-                        println!(
+                        tracing::debug!(
                             "Processed query {} {:?} within {}ms",
                             question.qname,
                             question.qtype,
@@ -131,13 +138,14 @@ impl DnsSocket {
                         );
                     }
                     Err(err) => {
-                        eprintln!(
+                        tracing::error!(
                             "Failed to respond to query {} {:?}: {}",
-                            question.qname, question.qtype, err
+                            question.qname,
+                            question.qtype,
+                            err
                         );
                     }
                 };
-            };
         });
 
         Ok(())
@@ -151,10 +159,8 @@ impl DnsSocket {
             Ok(reply) => {
                 self.send_to(&reply, from).await?;
                 Ok(())
-            },
-            Err(e) => {
-                Err(e)
             }
+            Err(e) => Err(e),
         }
     }
 
@@ -162,8 +168,10 @@ impl DnsSocket {
      * Query this dns for data
      */
     pub async fn query(&mut self, query: &Vec<u8>) -> Result<Vec<u8>, RequestError> {
+        tracing::trace!("Try to resolve the query with the custom handler.");
         let result = self.handler.call(query, self.clone()).await;
         if let Ok(reply) = result {
+            tracing::debug!("Custom handler resolved the query.");
             // All good. Handler handled the query
             return Ok(reply);
         };
@@ -171,12 +179,11 @@ impl DnsSocket {
         match result.unwrap_err() {
             CustomHandlerError::Unhandled => {
                 // Fallback to ICANN
+                tracing::debug!("Custom handler rejected the query.");
                 let reply = self.forward_to_icann(query, Duration::from_secs(2)).await?;
                 Ok(reply)
             }
-            CustomHandlerError::IO(e) => {
-                Err(e)
-            }
+            CustomHandlerError::IO(e) => Err(e),
         }
     }
 
@@ -202,6 +209,7 @@ impl DnsSocket {
         let (tx, rx) = oneshot::channel::<Vec<u8>>();
         let forward_id = self.id_manager.get_next(to);
         let original_id = packet.id();
+        tracing::debug!("Fallback to the forward server {to:?} forward_id={forward_id}.");
         let request = PendingRequest {
             original_query_id: original_id,
             forward_query_id: forward_id,
@@ -220,6 +228,9 @@ impl DnsSocket {
         let reply = tokio::time::timeout(timeout, rx).await;
         if reply.is_err() {
             // Timeout, remove pending again
+            tracing::debug!(
+                "Forwarded query original_id={original_id} forward_id={forward_id} timed out."
+            );
             self.pending.remove_by_forward_id(&forward_id, &to);
         };
         let mut reply = reply?.unwrap();
@@ -254,7 +265,7 @@ mod tests {
         let listening: SocketAddr = "0.0.0.0:34254".parse().unwrap();
         let icann_fallback: SocketAddr = "8.8.8.8:53".parse().unwrap();
         let handler = HandlerHolder::new(EmptyHandler::new());
-        let mut socket = DnsSocket::new(listening, icann_fallback, handler, true)
+        let mut socket = DnsSocket::new(listening, icann_fallback, handler)
             .await
             .unwrap();
 

@@ -20,7 +20,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
 
     let anydns = Builder::new()
-        .verbose(true)
         .icann_resolver("8.8.8.8:53".parse()?)
         .build()
         .await?;
@@ -60,7 +59,7 @@ impl CustomHandler for MyHandler {
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
 
-        let is_any_dot_dns = question.qname.to_string() == "any.dns" || question.qtype == QTYPE::TYPE(TYPE::A);
+        let is_any_dot_dns = question.qname.to_string() == "any.dns" && question.qtype == QTYPE::TYPE(TYPE::A);
         if is_any_dot_dns {
             Ok(self.construct_reply(query)) // Reply with A record IP
         } else {
@@ -76,7 +75,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let handler = MyHandler {};
     let anydns = Builder::new()
         .handler(handler) // Add the handler here.
-        .verbose(true)
         .icann_resolver("8.8.8.8:53".parse().unwrap())
         .build()
         .await?;
@@ -90,3 +88,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 ```
 
 Test: `nslookup any.dns 127.0.0.1`
+
+
+## Logs
+
+anydns uses the tracing crate for logs. Set the environment variable `RUST_LOG=any_dns=trace` to see them.
