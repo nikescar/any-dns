@@ -24,7 +24,7 @@ pub enum RequestError {
     #[error(transparent)]
     IO(#[from] tokio::io::Error),
 
-    #[error("No answer received within timeout.")]
+    #[error("No answer received from forward server within timeout.")]
     Timeout(#[from] tokio::time::error::Elapsed),
 }
 
