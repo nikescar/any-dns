@@ -28,7 +28,7 @@ impl CustomHandler for MyHandler {
         let question = packet.questions.get(0).expect("Valid query");
 
         let is_any_dot_dns =
-            question.qname.to_string() == "any.dns" || question.qtype == QTYPE::TYPE(TYPE::A);
+            question.qname.to_string() == "any.dns" && question.qtype == QTYPE::TYPE(TYPE::A);
         if is_any_dot_dns {
             Ok(self.construct_reply(query)) // Reply with A record IP
         } else {
@@ -58,17 +58,17 @@ impl MyHandler {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
+    tracing_subscriber::fmt::init();
+    tracing::info!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
     let handler = MyHandler {};
     let anydns = Builder::new()
         .handler(handler)
-        .verbose(true)
         .icann_resolver("8.8.8.8:53".parse().unwrap())
         .build()
         .await?;
 
     anydns.wait_on_ctrl_c().await;
-    println!("Got it! Exiting...");
+    tracing::info!("Got it! Exiting...");
     anydns.stop();
 
     Ok(())

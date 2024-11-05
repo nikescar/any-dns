@@ -11,7 +11,6 @@ pub struct Builder {
     icann_resolver: SocketAddr,
     listen: SocketAddr,
     handler: HandlerHolder,
-    verbose: bool,
 }
 
 impl Builder {
@@ -20,7 +19,6 @@ impl Builder {
             icann_resolver: SocketAddr::from(([192, 168, 1, 1], 53)),
             listen: SocketAddr::from(([0, 0, 0, 0], 53)),
             handler: HandlerHolder::new(EmptyHandler::new()),
-            verbose: false,
         }
     }
 
@@ -36,12 +34,6 @@ impl Builder {
         self
     }
 
-    /// Makes the server log verbosely.
-    pub fn verbose(mut self, verbose: bool) -> Self {
-        self.verbose = verbose;
-        self
-    }
-
     /** Set handler to process the dns packet. `Ok()`` should include a dns packet with answers. `Err()` will fallback to ICANN. */
     pub fn handler(mut self, handler: impl CustomHandler + 'static) -> Self {
         self.handler = HandlerHolder::new(handler);
@@ -50,7 +42,7 @@ impl Builder {
 
     // /** Build and start server. */
     pub async fn build(self) -> tokio::io::Result<AnyDNS> {
-        AnyDNS::new(self.listen, self.icann_resolver, self.handler, self.verbose).await
+        AnyDNS::new(self.listen, self.icann_resolver, self.handler).await
     }
 }
 
@@ -64,9 +56,8 @@ impl AnyDNS {
         listener: SocketAddr,
         icann_fallback: SocketAddr,
         handler: HandlerHolder,
-        verbose: bool,
     ) -> tokio::io::Result<Self> {
-        let mut socket = DnsSocket::new(listener, icann_fallback, handler, verbose).await?;
+        let mut socket = DnsSocket::new(listener, icann_fallback, handler).await?;
         let join_handle = tokio::spawn(async move {
             socket.receive_loop().await;
         });
