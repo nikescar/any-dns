@@ -122,7 +122,7 @@ impl DnsSocket {
                 return;
             };
             let question = question.unwrap();
-            tracing::debug!(
+            tracing::trace!(
                 "Received new query {} {:?}",
                 question.qname,
                 question.qtype
@@ -230,7 +230,7 @@ impl DnsSocket {
         let reply = tokio::time::timeout(timeout, rx).await;
         if reply.is_err() {
             // Timeout, remove pending again
-            tracing::debug!(
+            tracing::trace!(
                 "Forwarded query original_id={original_id} forward_id={forward_id} timed out."
             );
             self.pending.remove_by_forward_id(&forward_id, &to);
