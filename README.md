@@ -93,6 +93,3 @@ Test: `nslookup any.dns 127.0.0.1`
 ## Logs
 
 anydns uses the tracing crate for logs. Set the environment variable `RUST_LOG=any_dns=trace` to see them.
-
-
-slides: https://docs.google.com/presentation/d/1gjaeRNerTHDqaGn1oc2ZrZz9wMXSImoT4g--55P8RYY/edit?usp=sharing
