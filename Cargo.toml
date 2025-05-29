@@ -1,11 +1,11 @@
 [package]
-name = "any-dns"
+name = "any_dns_dqy"
 version = "0.3.2"
 edition = "2021"
 license = "MIT"
 keywords = ["dns"]
-description = "Lightweight DNS server with Middleware support for non-ICANN domains."
-repository = "https://github.com/severinalexb/any-dns/"
+description = "Lightweight DNS server"
+repository = ""
 readme = "README.md"
 
 exclude = [
@@ -17,7 +17,9 @@ async-trait = "0.1.77"
 dyn-clone = "1.0.16"
 simple-dns = "0.6.0"
 thiserror = "1.0.56"
-tokio = { version = "1.36.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-
+dnslib = { version = "0.5.2", git = "https://github.com/dandyvica/dqy", branch = "main" }
+clap = { version = "4.5.26", features = ["cargo"] }
+rustc_version_runtime = "0.3.0"
