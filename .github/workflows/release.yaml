@@ -81,12 +81,12 @@ jobs:
           - name: Windows x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            build-args: "--profile release-with-symbols"
+            build-args: ""
 
           - name: Windows x86
             os: windows-latest
             target: i686-pc-windows-msvc
-            build-args: "--profile release-with-symbols"
+            build-args: ""
 
     steps:
       - name: Install package for linux
