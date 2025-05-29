@@ -15,3 +15,4 @@ $ ./any_dns_dqy @https://cloudflare-dns.com/dns-query --doh
 thread 'tokio-runtime-worker' panicked at .cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tokio-1.45.1\src\runtime\scheduler\multi_thread\mod.rs:86:9:  
 Cannot start a runtime from within a runtime. This happens because a function (like `block_on`) attempted to block the current thread while the thread is being used to drive asynchronous tasks.
 ```
+
