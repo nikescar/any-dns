@@ -2,7 +2,7 @@
 ** use it only on testing purposes **<br/>
 ** only A,AAAA,MX records are supported secured transport, other kinds are sent with normal dns requests. **
 
-small dns server made with [any-dns](https://img.shields.io/crates/v/any-dns) service and [dqy](https://github.com/dandyvica/dqy) backend
+small dns server made with [any-dns](https://github.com/severinalexb/any-dns/) service and [dqy](https://github.com/dandyvica/dqy) backend
 
 ```
 # run doh transport dns proxy for A,AAAA,MX Records.
