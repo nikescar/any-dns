@@ -1,6 +1,6 @@
 [package]
 name = "any_dns_dqy"
-version = "0.3.2"
+version = "0.0.1"
 edition = "2021"
 license = "MIT"
 keywords = ["dns"]
