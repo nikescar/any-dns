@@ -1,7 +1,30 @@
 title: any_dns_dqy
 description: proxy dns support doh.
 show_downloads: true
-google_analytics:
-remote_theme: pages-themes/architect@v0.2.0
+remote_theme: carlosperate/jekyll-theme-rtd
 plugins:
 - jekyll-remote-theme
+
+webrick:
+  headers:
+    Access-Control-Allow-Origin: "*"
+
+# Theme settings
+repo_url: 'https://any-dns-dqy.dure.app'
+edit_on_github: true
+github_docs_folder: false
+sticky_navigation: true
+prev_next_buttons_location: both
+search_enabled: true
+site_author: Woojae, Park
+# logo: 'https://your.url/image.png'
+# site_favicon: 'https://your.url/here.ico'
+prev_next_buttons_location: None
+prev_next_buttons_location: top
+prev_next_buttons_location: bottom
+prev_next_buttons_location: both
+# google_analytics: UA-XXXXX-Y
+google_analytics_anonymize_ip: true
+# The highlight.js library provides 79 different colours for their syntax highlighting. The default is github-gist.
+hljs_style: github-gist
+exclude: ['src/*']
