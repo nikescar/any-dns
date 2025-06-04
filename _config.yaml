@@ -1,7 +1,7 @@
 title: any_dns_dqy
 description: proxy dns support doh.
 show_downloads: true
-remote_theme: carlosperate/jekyll-theme-rtd
+remote_theme: nikescar/jekyll-theme-rtd
 plugins:
 - jekyll-remote-theme
 
@@ -10,20 +10,20 @@ webrick:
     Access-Control-Allow-Origin: "*"
 
 # Theme settings
-repo_url: 'https://any-dns-dqy.dure.app'
+repo_url: 'https://github.com/nikescar/any-dns-dqy/'
 edit_on_github: true
 github_docs_folder: false
 sticky_navigation: true
-prev_next_buttons_location: both
+# prev_next_buttons_location: both
 search_enabled: false
 site_author: Woojae, Park
 # logo: 'https://tui.dure.app/assets/css/theme.css'
 # site_favicon: 'https://tui.dure.app/assets/img/favicon.ico'
 # theme: 'https://nikescar.github.io/jekyll-theme-rtd/assets/css/theme.css'
 # extra_theme: 'https://nikescar.github.io/jekyll-theme-rtd/assets/css/theme_extra.css'
-prev_next_buttons_location: None
-prev_next_buttons_location: top
-prev_next_buttons_location: bottom
+# prev_next_buttons_location: None
+# prev_next_buttons_location: top
+# prev_next_buttons_location: bottom
 prev_next_buttons_location: both
 # google_analytics: UA-XXXXX-Y
 google_analytics_anonymize_ip: true
