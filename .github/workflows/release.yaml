@@ -167,14 +167,12 @@ jobs:
       - name: list artifacts
         run: find artifacts/
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
-          distribution: goreleaser
-          version: '~> v1'
-          args: release --clean --skip=validate
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          repository: nikescar/anydnsdqy
+          files: [artifacts/*]
+          # note you'll typically need to create a personal access token
+          # with permissions to create releases in the other repo
+          token: ${{ secrets.RELEASE_TOKEN }}
