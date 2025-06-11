@@ -168,6 +168,7 @@ jobs:
         run: |
           find artifacts/
           mv artifacts/* ./
+          find ./
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -177,3 +178,5 @@ jobs:
           # note you'll typically need to create a personal access token
           # with permissions to create releases in the other repo
           token: ${{ secrets.RELEASE_TOKEN }}
+          fail_on_unmatched_files: true
+          draft: true
