@@ -172,13 +172,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
-          files: |
-            ../artifacts/anydnsdqy-*
-            ./artifacts/anydnsdqy-*
-            anydnsdqy-*
-            ../anydnsdqy-*
-          # note you'll typically need to create a personal access token
-          # with permissions to create releases in the other repo
-          token: ${{ secrets.RELEASE_TOKEN }}
+          tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
           draft: true
+          files: |
+            ./artifacts/anydnsdqy-*
+            ./anydnsdqy-*
+          token: ${{ secrets.RELEASE_TOKEN }}
+          
+          
