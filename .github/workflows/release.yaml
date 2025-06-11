@@ -172,7 +172,7 @@ jobs:
         if: github.ref_type == 'tag'
         with:
           repository: nikescar/anydnsdqy
-          files: [artifacts/*]
+          files: artifacts/*
           # note you'll typically need to create a personal access token
           # with permissions to create releases in the other repo
           token: ${{ secrets.RELEASE_TOKEN }}
