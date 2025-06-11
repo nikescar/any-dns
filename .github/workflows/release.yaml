@@ -167,14 +167,16 @@ jobs:
       - name: list artifacts
         run: |
           find artifacts/
-          mv artifacts/* ./
-          find ./
 
       - name: Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
-          files: anydnsdqy-*
+          files: |
+            ../artifacts/anydnsdqy-*
+            ./artifacts/anydnsdqy-*
+            anydnsdqy-*
+            ../anydnsdqy-*
           # note you'll typically need to create a personal access token
           # with permissions to create releases in the other repo
           token: ${{ secrets.RELEASE_TOKEN }}
