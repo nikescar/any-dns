@@ -167,6 +167,17 @@ jobs:
       - name: list artifacts
         run: |
           find artifacts/
+          mkdir distbin/
+          cp artifacts/anydnsdqy-i686-unknown-linux-musl/anydnsdqy dist/anydnsdqy-i686-unknown-linux-musl
+          cp artifacts/anydnsdqy-x86_64-unknown-freebsd/anydnsdqy dist/anydnsdqy-x86_64-unknown-freebsd
+          cp artifacts/anydnsdqy-i686-unknown-freebsd/anydnsdqy dist/anydnsdqy-i686-unknown-freebsd
+          cp artifacts/anydnsdqy-armv7-unknown-linux-musleabihf/anydnsdqy dist/anydnsdqy-armv7-unknown-linux-musleabihf
+          cp artifacts/anydnsdqy-x86_64-apple-darwin/anydnsdqy dist/anydnsdqy-x86_64-apple-darwin
+          cp artifacts/anydnsdqy-armv7-linux-androideabi/anydnsdqy dist/anydnsdqy-armv7-linux-androideabi
+          cp artifacts/anydnsdqy-aarch64-apple-darwin/anydnsdqy dist/anydnsdqy-aarch64-apple-darwin
+          cp artifacts/anydnsdqy-aarch64-linux-android dist/anydnsdqy-aarch64-linux-android
+          cp artifacts/anydnsdqy-x86_64-unknown-linux-musl/anydnsdqy dist/anydnsdqy-x86_64-unknown-linux-musl
+          cp artifacts/anydnsdqy-aarch64-unknown-linux-musl/anydnsdqy dist/anydnsdqy-aarch64-unknown-linux-musl
 
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -175,9 +186,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           fail_on_unmatched_files: true
           draft: true
-          files: |
-            ./artifacts/anydnsdqy-*
-            ./anydnsdqy-*
+          files: distbin/*
           token: ${{ secrets.RELEASE_TOKEN }}
           
           
