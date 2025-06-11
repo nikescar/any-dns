@@ -20,6 +20,7 @@ use dnslib::transport::{
     udp::UdpProtocol,
 };
 use std::{error::Error, net::Ipv4Addr};
+use std::borrow::Cow;
 use std::net::Ipv6Addr;
 use custom_handler::{CustomHandler, CustomHandlerError };
 use server::{Builder};
@@ -27,8 +28,9 @@ use dns_socket::{DnsSocket};
 
 use async_trait::async_trait;
 use dnslib::dns::rfc::domain::DomainName;
-use simple_dns::{Name, Packet, ResourceRecord, QTYPE, TYPE};
+use simple_dns::{CharacterString, Name, Packet, ResourceRecord, QTYPE, TYPE};
 use simple_dns::rdata::{AAAA, A};
+use simple_dns::rdata::RData::NS;
 use crate::args::CliOptions;
 use crate::protocol::DnsProtocol;
 use crate::show::QueryInfo;
@@ -65,9 +67,10 @@ impl CustomHandler for MyHandler {
             self.options.protocol.qtype.push(QType::AAAA);
             cantranslate = true;
         }
-        // if question.qtype == QTYPE::TYPE(TYPE::AFSDB){ // nslookup -type=afsdb google.com 8.8.8.8
-        //     self.options.protocol.qtype.push(QType::AFSDB)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::AFSDB){ // nslookup -type=afsdb google.com 8.8.8.8
+            self.options.protocol.qtype.push(QType::AFSDB);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::APL){
         //     self.options.protocol.qtype.push(QType::APL)
         // }
@@ -83,9 +86,10 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::CERT){
         //     self.options.protocol.qtype.push(QType::CERT)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::CNAME){ // nslookup -query=cname google.com 8.8.8.8
-        //     self.options.protocol.qtype.push(QType::CNAME)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::CNAME){ // nslookup -query=cname google.com 8.8.8.8
+            self.options.protocol.qtype.push(QType::CNAME);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::CSYNC){
         //     self.options.protocol.qtype.push(QType::CSYNC)
         // }
@@ -110,9 +114,10 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::EUI64){
         //     self.options.protocol.qtype.push(QType::EUI64)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::HINFO){ // nslookup -query=hinfo google.com 8.8.8.8
-        //     self.options.protocol.qtype.push(QType::HINFO)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::HINFO){ // nslookup -query=hinfo google.com 8.8.8.8
+            self.options.protocol.qtype.push(QType::HINFO);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::HIP){
         //     self.options.protocol.qtype.push(QType::HIP)
         // }
@@ -125,19 +130,22 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::KX){
         //     self.options.protocol.qtype.push(QType::KX)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::LOC){ // unknown query type: loc
-        //     self.options.protocol.qtype.push(QType::LOC)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::LOC){ // unknown query type: loc
+            self.options.protocol.qtype.push(QType::LOC);
+            cantranslate = true;
+        }
         if question.qtype == QTYPE::TYPE(TYPE::MX){
             self.options.protocol.qtype.push(QType::MX);
             cantranslate = true;
         }
         // if question.qtype == QTYPE::TYPE(TYPE::NAPTR){ // unknown query type: naptr
-        //     self.options.protocol.qtype.push(QType::NAPTR)
+        //     self.options.protocol.qtype.push(QType::NAPTR);
+        //     cantranslate = true;
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::NS){ // nslookup -type=ns google.com 8.8.8.8
-        //     self.options.protocol.qtype.push(QType::NS)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::NS){ // nslookup -type=ns google.com 8.8.8.8
+            self.options.protocol.qtype.push(QType::NS);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::NSEC){
         //     self.options.protocol.qtype.push(QType::NSEC)
         // }
@@ -153,9 +161,10 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: otp
         //     self.options.protocol.qtype.push(QType::OPT)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::PTR){ // nslookup -type=ptr google.com 8.8.8.8
-        //     self.options.protocol.qtype.push(QType::PTR)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::PTR){ // nslookup -type=ptr google.com 8.8.8.8
+            self.options.protocol.qtype.push(QType::PTR);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::RP){ // nslookup -type=rp google.com 8.8.8.8
         //     self.options.protocol.qtype.push(QType::RP)
         // }
@@ -165,12 +174,14 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::SMIMEA){
         //     self.options.protocol.qtype.push(QType::SMIMEA)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::SOA){ // NOT SHOWING ANYTHING FROM DQY RESULT
-        //     self.options.protocol.qtype.push(QType::SOA)
-        // }
-        // if question.qtype == QTYPE::TYPE(TYPE::SRV){ //nslookup -type=srv google.com 1.1.1.1
-        //     self.options.protocol.qtype.push(QType::SRV)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::SOA){ // NOT SHOWING ANYTHING FROM DQY RESULT
+            self.options.protocol.qtype.push(QType::SOA);
+            cantranslate = true;
+        }
+        if question.qtype == QTYPE::TYPE(TYPE::SRV){ //nslookup -type=srv google.com 1.1.1.1
+            self.options.protocol.qtype.push(QType::SRV);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::SSHFP){
         //     self.options.protocol.qtype.push(QType::SSHFP)
         // }
@@ -180,9 +191,10 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::TLSA){
         //     self.options.protocol.qtype.push(QType::TLSA)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::TXT){ //nslookup -type=txt google.com 127.0.0.1
-        //     self.options.protocol.qtype.push(QType::TXT)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::TXT){ //nslookup -type=txt google.com 127.0.0.1
+            self.options.protocol.qtype.push(QType::TXT);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::URI){
         //     self.options.protocol.qtype.push(QType::URI)
         // }
@@ -196,7 +208,7 @@ impl CustomHandler for MyHandler {
         self.options.protocol.domain_name = DomainName::try_from(self.options.protocol.domain_string.as_str()).expect("REASON");
 
         if cantranslate {
-            Ok(self.construct_reply_dqy(query)) // Reply with A record IP
+            Ok(self.construct_reply_dqy(query).await) // Reply with A record IP
         } else {
             Err(CustomHandlerError::Unhandled) // Fallback to ICANN
         }
@@ -212,9 +224,9 @@ impl MyHandler {
     }
 
     // Construct reply from dqy MessageList
-    fn construct_reply_dqy(&self, query: &Vec<u8>) -> Vec<u8> {
+    async fn construct_reply_dqy(&self, query: &Vec<u8>) -> Vec<u8> {
         // tracing::info!("#### msg construct_reply_dqy ####");
-        let messages = self.get_messages(self.info.clone(), &self.options);
+        let messages = self.get_messages(self.info.clone(), &self.options).await;
         let messagestr = messages.unwrap();
         // tracing::info!("{}",messagestr);
         // ["\u{1b}[106;30mQUERY\u{1b}[0m", "\u{1b}[94mHEADER\u{1b}[0m(\u{1b}[96mid\u{1b}[0m:0xAD45(44357)", "\u{1b}[96mflags\u{1b}[0m:<rd", ">", "\u{1b}[96mqd_count\u{1b}[0m:1)", "\u{1b}[94mQUESTION\u{1b}[0m(\u{1b}[96mqname\u{1b}[0m:google.com.", "\u{1b}[96mqtype\u{1b}[0m:AAAA", "\u{1b}[96mqclass\u{1b}[0m:IN)", "\u{1b}[94mADDITIONAL\u{1b}[0m:(OPT(.", "OPT", "1232", "0", "0", "0))google.com.", "AAAA", "IN", "60", "16", "2404:6800:400a:805::200e", ".", "OPT", "1232", "0", "0", "0", "0"]
@@ -234,41 +246,367 @@ impl MyHandler {
 
             let rststr: String = msgpart[18].clone().to_string();
             let rststrmx: String = msgpart[19].clone().to_string();
-            if msgpart[14] == "AAAA" {
-                let rdata: Ipv6Addr = rststr.parse().unwrap();
-                let record = ResourceRecord::new(
-                    question.qname.clone(),
-                    simple_dns::CLASS::IN,
-                    120,
-                    simple_dns::rdata::RData::AAAA(rdata.try_into().unwrap()),
-                );
-                reply.answers.push(record);
-            }else if msgpart[14] == "MX" {
-                let preference: u16 = msgpart[18].parse::<u16>().unwrap();;
-                let exchange = Name::new(rststrmx.as_str()).unwrap();
-                let mx_rdata = simple_dns::rdata::MX { preference, exchange };
-                let record = ResourceRecord::new(
-                    question.qname.clone(),
-                    simple_dns::CLASS::IN,
-                    120,
-                    simple_dns::rdata::RData::MX(mx_rdata),
-                );
-                reply.answers.push(record);
-            }else if msgpart[14] == "A"{
-                let rdata: Ipv4Addr = rststr.parse().unwrap();
-                let record = ResourceRecord::new(
-                    question.qname.clone(),
-                    simple_dns::CLASS::IN,
-                    120,
-                    simple_dns::rdata::RData::A(rdata.try_into().unwrap()),
-                );
-                reply.answers.push(record);
+            match msgpart[14] {
+                "AAAA" => {
+                    let rdata: Ipv6Addr = rststr.parse().unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::AAAA(rdata.try_into().unwrap()),
+                    ));
+                }
+                "MX" => {
+                    let preference: u16 = msgpart[18].parse().unwrap();
+                    let exchange = Name::new(rststrmx.as_str()).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::MX(simple_dns::rdata::MX { preference, exchange }),
+                    ));
+                }
+                "A" => {
+                    let rdata: Ipv4Addr = rststr.parse().unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::A(rdata.try_into().unwrap()),
+                    ));
+                }
+                "NS" => {
+                    let nsdname = Name::new(rststr.as_str()).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::NS(simple_dns::rdata::NS::from(nsdname)),
+                    ));
+                }
+                "CNAME" => {
+                    let cname = Name::new(rststr.as_str()).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::CNAME(simple_dns::rdata::CNAME::from(cname)),
+                    ));
+                }
+                "MB" => {
+                    let madname = Name::new(rststr.as_str()).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::MB(simple_dns::rdata::MB::from(madname)),
+                    ));
+                }
+                // "MG" => { ??????
+                //     let mgmname = Name::new(rststr.as_str()).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::MG(simple_dns::rdata::MG::from(mgmname)),
+                //     ));
+                // }
+                // "MR" => { ???????
+                //     let newname = Name::new(rststr.as_str()).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::MR(simple_dns::rdata::MR::from(newname)),
+                //     ));
+                // }
+                "PTR" => {
+                    let ptrdname = Name::new(rststr.as_str()).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::PTR(simple_dns::rdata::PTR::from(ptrdname)),
+                    ));
+                }
+                // "MF" => { ???????
+                //     let madname = Name::new(rststr.as_str()).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::MF(simple_dns::rdata::MF::from(madname)),
+                //     ));
+                // }
+                "HINFO" => {
+                    let cpu = msgpart.get(18).unwrap_or(&"");
+                    let os = msgpart.get(19).unwrap_or(&"");
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::HINFO(simple_dns::rdata::HINFO {
+                            cpu: simple_dns::CharacterString::try_from(cpu.to_string()).unwrap(),
+                            os: simple_dns::CharacterString::try_from(os.to_string()).unwrap(),
+                        }),
+                    ));
+                }
+                // "MINFO" => {
+                //     let rmailbx = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
+                //     let emailbx = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::MINFO(simple_dns::rdata::MINFO {
+                //             rmailbx,
+                //             emailbx,
+                //         }),
+                //     ));
+                // }
+                "TXT" => {
+                    let txt = msgpart.get(18).unwrap_or(&"");
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::TXT(simple_dns::rdata::TXT::new().with_string(txt).expect("REASON")),
+                    ));
+                }
+                "SOA" => {
+                    let mname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
+                    let rname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                    let serial = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                    let refresh = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
+                    let retry = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
+                    let expire = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
+                    let minimum = msgpart.get(24).unwrap_or(&"0").parse().unwrap_or(0);
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::SOA(simple_dns::rdata::SOA {
+                            mname,
+                            rname,
+                            serial,
+                            refresh,
+                            retry,
+                            expire,
+                            minimum,
+                        }),
+                    ));
+                }
+                // "WKS" => {
+                //     let address: Ipv4Addr = msgpart.get(18).unwrap_or(&"0.0.0.0").parse().unwrap();
+                //     let protocol: u8 = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let bitmap_hex = msgpart.get(20).unwrap_or(&"");
+                //     let bitmap = hex::decode(bitmap_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::WKS(simple_dns::rdata::WKS {
+                //             address: address.into(),
+                //             protocol: protocol,
+                //             bit_map: Cow::from(bitmap),
+                //         }),
+                //     ));
+                // }
+                "SRV" => {
+                    let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                    let weight = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                    let port = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                    let target = Name::new(msgpart.get(21).unwrap_or(&"")).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::SRV(simple_dns::rdata::SRV {
+                            priority,
+                            weight,
+                            port,
+                            target,
+                        }),
+                    ));
+                }
+                // "RP" => {
+                //     let mbox_dname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
+                //     let txt_dname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::RP(simple_dns::rdata::RP {
+                //             mbox_dname,
+                //             txt_dname,
+                //         }),
+                //     ));
+                // }
+                "AFSDB" => {
+                    // AFSDB expects subtype and hostname
+                    let subtype = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                    let hostname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::AFSDB(simple_dns::rdata::AFSDB {
+                            subtype,
+                            hostname,
+                        }),
+                    ));
+                }
+                // "ISDN" => {
+                //     // ISDN expects address and optional sa
+                //     let address = msgpart.get(18).unwrap_or(&"").to_string();
+                //     let sa = msgpart.get(19).map(|s| s.to_string());
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::ISDN(simple_dns::rdata::ISDN {
+                //             address: address.try_into().unwrap(),
+                //             sa: sa.try_into().unwrap(),
+                //         }),
+                //     ));
+                // }
+                // "NAPTR" => {
+                //     // NAPTR expects order, preference, flags, services, regexp, replacement
+                //     let order = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let preference = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let flags = msgpart.get(20).unwrap_or(&"").to_string();
+                //     let services = msgpart.get(21).unwrap_or(&"").to_string();
+                //     let regexp = msgpart.get(22).unwrap_or(&"").to_string();
+                //     let replacement = Name::new(msgpart.get(23).unwrap_or(&"")).unwrap();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::NAPTR(simple_dns::rdata::NAPTR {
+                //             order: order,
+                //             preference: preference,
+                //             flags: CharacterString::new(flags.as_ref()).unwrap(),
+                //             services: CharacterString::new(services.as_ref()).unwrap(),
+                //             regexp: CharacterString::new(regexp.as_ref()).unwrap(),
+                //             replacement: replacement,
+                //         }),
+                //     ));
+                // }
+                // "NSAP" => {
+                //     // NSAP expects a hex string
+                //     let nsap_hex = msgpart.get(18).unwrap_or(&"");
+                //     let nsap = hex::decode(nsap_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::NSAP(nsap),
+                //     ));
+                // }
+                "LOC" => {
+                    // LOC expects version, size, horiz_pre, vert_pre, latitude, longitude, altitude
+                    let version = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                    let size = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                    let horiz_pre = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                    let vert_pre = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
+                    let latitude = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
+                    let longitude = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
+                    let altitude = msgpart.get(24).unwrap_or(&"0").parse().unwrap_or(0);
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        120,
+                        simple_dns::rdata::RData::LOC(simple_dns::rdata::LOC {
+                            version: version,
+                            size: size,
+                            vertical_precision: vert_pre,
+                            horizontal_precision: horiz_pre,
+                            altitude: altitude,
+                            longitude: longitude,
+                            latitude: latitude,
+                        }),
+                    ));
+                }
+                // "OPT" => {
+                //     // OPT expects UDP payload size, extended RCODE, version, flags, and data
+                //     let udp_payload_size = msgpart.get(18).unwrap_or(&"4096").parse().unwrap_or(4096);
+                //     let extended_rcode = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let version = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let flags = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let data_hex = msgpart.get(22).unwrap_or(&"");
+                //     let data = hex::decode(data_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::OPT(simple_dns::rdata::OPT {
+                //             udp_payload_size,
+                //             extended_rcode,
+                //             version,
+                //             flags,
+                //             data,
+                //         }),
+                //     ));
+                // }
+                // "CAA" => {
+                //     // CAA expects flags, tag, value
+                //     let flags = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let tag = msgpart.get(19).unwrap_or(&"").to_string();
+                //     let value = msgpart.get(20).unwrap_or(&"").to_string();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::CAA(simple_dns::rdata::CAA {
+                //             flag: flags,
+                //             tag: CharacterString::new(tag.as_ref()).unwrap(),
+                //             value: CharacterString::new(value.as_ref()).unwrap(),
+                //         }),
+                //     ));
+                // }
+                // "SVCB" => {
+                //     // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
+                //     let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     // For params, you may need to parse a hex/base64 string or a custom format
+                //     let params_hex = msgpart.get(20).unwrap_or(&"");
+                //     let params = hex::decode(params_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::SVCB(simple_dns::rdata::SVCB {
+                //             priority: priority,
+                //             target: target,
+                //             params: params
+                //         }),
+                //     ));
+                // }
+                // "HTTPS" => {
+                //     // HTTPS expects priority, target, and params (as a hex string or base64, depending on your format)
+                //     let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     // For params, you may need to parse a hex/base64 string or a custom format
+                //     let params_hex = msgpart.get(20).unwrap_or(&"");
+                //     let params = hex::decode(params_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         120,
+                //         simple_dns::rdata::RData::HTTPS(simple_dns::rdata::HTTPS {
+                //             priority,
+                //             target,
+                //             params,
+                //         }),
+                //     ));
+                // }
+                _ => {}
             }
             reply.build_bytes_vec().unwrap()
         }
     }
 
-    fn get_messages_using_sync_transport<T: Messenger>(
+    async fn get_messages_using_sync_transport<T: Messenger>(
         &self,
         info: QueryInfo,
         transport: &mut T,
@@ -277,51 +615,32 @@ impl MyHandler {
         // BUFFER_SIZE is the size of the buffer used to received data
         let messages = DnsProtocol::sync_process_request(options, transport, BUFFER_SIZE)?;
 
-        // we want run info
-        // if let Some(info) = info {
-        //     info.netinfo = *transport.network_info();
-        // }
-
         Ok(messages)
     }
 
-    fn get_messages(&self, info: QueryInfo, options: &CliOptions) -> dnslib::error::Result<MessageList> {
+    async fn get_messages(&self, info: QueryInfo, options: &CliOptions) -> dnslib::error::Result<MessageList> {
         match options.transport.transport_mode {
             Protocol::Udp => {
                 let mut transport = UdpProtocol::new(&options.transport)?;
-                self.get_messages_using_sync_transport(info, &mut transport, options)
+                self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::Tcp => {
                 let mut transport = TcpProtocol::new(&options.transport)?;
-                self.get_messages_using_sync_transport(info, &mut transport, options)
+                self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoT => {
                 let mut transport = TlsProtocol::new(&options.transport)?;
-                self.get_messages_using_sync_transport(info, &mut transport, options)
+                self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoH => {
                 let mut transport = HttpsProtocol::new(&options.transport)?;
-                self.get_messages_using_sync_transport(info, &mut transport, options)
+                self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoQ => {
-                // quinn crate doesn't provide blocking
-                let rt = tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(Tokio)?;
-    
-                rt.block_on(async {
-                    let mut transport = QuicProtocol::new(&options.transport).await?;
-                    let messages = DnsProtocol::async_process_request(options, &mut transport, BUFFER_SIZE).await?;
-    
-                    // we want run info
-                    // if let Some(info) = info {
-                    //     info.netinfo = *transport.network_info();
-                    // }
-                    Ok(messages)
-                })
+                let mut transport = QuicProtocol::new(&options.transport).await?;
+                let messages = DnsProtocol::async_process_request(options, &mut transport, BUFFER_SIZE).await?;
+                Ok(messages)
             }
-            
         }
     }
 }
@@ -347,8 +666,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut dns_fallback = String::from("1.1.1.1");
     tracing::info!("primary dns : {}",endpoint);
     for addr in &endpoint.addrs {
-        // try to connect
-        // println!("addr: {} ", addr);
+        // ignore ipv6 for now  
+        if addr.ip().is_ipv6() {
+            tracing::warn!("Ignoring IPv6 address: {}", addr.ip());
+            continue;
+        }
         dns_fallback = addr.ip().to_string();
     }
     dns_fallback.push_str(":53");

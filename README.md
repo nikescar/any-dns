@@ -1,18 +1,73 @@
-# any_dns_dqy
-** use it only on testing purposes **<br/>
-** only A,AAAA,MX records are supported secured transport, other kinds are sent with normal dns requests. **
+# anydnsdqy
 
-small dns server made with [any-dns](https://github.com/severinalexb/any-dns/) service and [dqy](https://github.com/dandyvica/dqy) backend
+small dns server supports doq(dns over quic), doh(dns over https) made with rust.
+it is made with [any-dns](https://github.com/severinalexb/any-dns/) service and [dqy](https://github.com/dandyvica/dqy) backend
+
+* this binary has not tested, please use this in test environment
+* ipv6 service or connect is not supported
+
+## Usage
+
+use it like any dns server. it will open 53 port.
+```
+- Run Normal DNS Server backed with default system DNS
+$ ./anydnsdqy
+
+- Use a specific resolver
+$ ./anydnsdqy @1.1.1.1
+
+- Use DoT for a resolver supporting DNS over TLS
+$ ./anydnsdqy @1.1.1.1 --tls
+
+- Use DoH for a resolver supporting DNS over HTTPS
+$ ./anydnsdqy @https://cloudflare-dns.com/dns-query --doh
+
+- Use DoQ
+$ ./anydnsdqy @quic://dns.adguard.com
+
+- Use DNSSEC
+$ ./anydnsdqy --dnssec
+```
+
+## Supported DNS Types
+
+these dns types are supported. Unsupported dns type request will be replied with fallback server responses.
 
 ```
-# run doh transport dns proxy for A,AAAA,MX Records.
-$ ./any_dns_dqy @https://cloudflare-dns.com/dns-query --doh
+A
+AAAA
+AFSDB
+CNAME
+HINFO
+LOC
+MX
+NS
+PTR
+SOA
+SRV
+TXT
 ```
 
-## todo
-* doq thread problem
+## Todo
+
+DQY Supported But Implemented Types
 ```
-thread 'tokio-runtime-worker' panicked at .cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tokio-1.45.1\src\runtime\scheduler\multi_thread\mod.rs:86:9:  
-Cannot start a runtime from within a runtime. This happens because a function (like `block_on`) attempted to block the current thread while the thread is being used to drive asynchronous tasks.
+NAPTR
+MD
+MB
+MG
+MR
+MF
+MINFO
+WKS
+RP
+ISDN
+RouteThrough
+NSAP
+NSAP_PTR
+OPT
+CAA
+SVCB
+HTTPS
 ```
 

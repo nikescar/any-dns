@@ -1,4 +1,4 @@
-title: any_dns_dqy
+title: anydnsdqy
 description: proxy dns support doh.
 show_downloads: true
 remote_theme: nikescar/jekyll-theme-rtd
@@ -10,7 +10,7 @@ webrick:
     Access-Control-Allow-Origin: "*"
 
 # Theme settings
-repo_url: 'https://github.com/nikescar/any-dns-dqy/'
+repo_url: 'https://github.com/nikescar/anydnsdqy/'
 edit_on_github: true
 github_docs_folder: false
 sticky_navigation: true

@@ -135,7 +135,7 @@ impl CliOptions {
         let dqy_version = crate_version!();
         let about = format!(
             r#"
-any_dns_dqy v{}
+anydnsdqy v{}
 A DNS server backed by dqy.
 Compiled with rustc v{}"#,
             dqy_version,
@@ -143,7 +143,7 @@ Compiled with rustc v{}"#,
         );
 
         let usage = format!(
-            r#"any_dns_dqy [@RESOLVER] [OPTIONS]
+            r#"anydnsdqy [@RESOLVER] [OPTIONS]
      
 Supported query types: {}
             "#,
@@ -166,7 +166,7 @@ Supported query types: {}
             .author("")
             .about(about)
             .after_long_help(include_str!("dqy_usage_examples.txt"))
-            .bin_name("any_dns_dqy")
+            .bin_name("anydnsdqy")
             .no_binary_name(true)
             .override_usage(usage)
             // .arg(

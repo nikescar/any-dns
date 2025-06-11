@@ -2,19 +2,19 @@ Examples:
 
 
 - Run Normal DNS Server backed with default system DNS
-$ ./any_dns_dqy 
+$ ./anydnsdqy
 
 - Use a specific resolver
-$ ./any_dns_dqy @1.1.1.1
+$ ./anydnsdqy @1.1.1.1
 
 - Use DoT for a resolver supporting DNS over TLS
-$ ./any_dns_dqy @1.1.1.1 --tls
+$ ./anydnsdqy @1.1.1.1 --tls
 
 - Use DoH for a resolver supporting DNS over HTTPS
-$ ./any_dns_dqy @https://cloudflare-dns.com/dns-query --doh
+$ ./anydnsdqy @https://cloudflare-dns.com/dns-query --doh
 
 - Use DoQ
-$ ./any_dns_dqy @quic://dns.adguard.com
+$ ./anydnsdqy @quic://dns.adguard.com
 
 - Use DNSSEC
-$ ./any_dns_dqy --dnssec
+$ ./anydnsdqy --dnssec
