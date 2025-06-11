@@ -175,7 +175,7 @@ jobs:
           cp artifacts/anydnsdqy-x86_64-apple-darwin/anydnsdqy distbin/anydnsdqy-x86_64-apple-darwin
           cp artifacts/anydnsdqy-armv7-linux-androideabi/anydnsdqy distbin/anydnsdqy-armv7-linux-androideabi
           cp artifacts/anydnsdqy-aarch64-apple-darwin/anydnsdqy distbin/anydnsdqy-aarch64-apple-darwin
-          cp artifacts/anydnsdqy-aarch64-linux-android distbin/anydnsdqy-aarch64-linux-android
+          cp artifacts/anydnsdqy-aarch64-linux-android/anydnsdqy distbin/anydnsdqy-aarch64-linux-android
           cp artifacts/anydnsdqy-x86_64-unknown-linux-musl/anydnsdqy distbin/anydnsdqy-x86_64-unknown-linux-musl
           cp artifacts/anydnsdqy-aarch64-unknown-linux-musl/anydnsdqy distbin/anydnsdqy-aarch64-unknown-linux-musl
 
