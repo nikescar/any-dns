@@ -25,3 +25,15 @@ clap = { version = "4.5.26", features = ["cargo"] }
 rustc_version_runtime = "0.3.0"
 hex = "0.4.3"
 service = "0.0.0"
+
+[profile.release]
+lto = "fat"
+panic = "abort"
+codegen-units = 1
+opt-level = 3
+debug = 0
+strip = "symbols"
+
+[profile.release-with-symbols]
+inherits = "release"
+strip = false
