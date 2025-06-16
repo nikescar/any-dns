@@ -27,6 +27,9 @@ $ ./anydnsdqy @quic://dns.adguard.com
 
 - Use DNSSEC
 $ ./anydnsdqy --dnssec
+
+- Binding Dns service to 127.0.0.2:53
+$ ./anydnsdqy -b 127.0.0.2:53
 ```
 
 ## Supported DNS Types

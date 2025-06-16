@@ -649,7 +649,7 @@ impl MyHandler {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
-    tracing::info!("Listening on 0.0.0.0:53. Waiting for Ctrl-C...");
+    
 
     // get arguments
     //───────────────────────────────────────────────────────────────────────────────────
@@ -676,10 +676,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dns_fallback.push_str(":53");
     tracing::info!("fallback dns : {}",dns_fallback);
     // parse and reply
-    let handler: MyHandler = MyHandler { options, info };
+    let handler: MyHandler = MyHandler { options: options.clone(), info };
+    let bind_addr = options.service.bind_addr.clone().unwrap_or_else(|| "0.0.0.0:53".to_string());
+    tracing::info!("Listening on {}. Waiting for Ctrl-C...", bind_addr);
     let anydns: server::AnyDNS = Builder::new()
         .handler(handler)
         .icann_resolver(dns_fallback.parse().unwrap())
+        .listen(bind_addr.parse().unwrap())
         .build()
         .await?;
 

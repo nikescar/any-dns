@@ -23,6 +23,14 @@ use dnslib::transport::{endpoint::EndPoint, TransportOptions};
 use crate::cli_options::{DnsProtocolOptions, EdnsOptions};
 use crate::show::{DisplayOptions, DumpOptions};
 
+//───────────────────────────────────────────────────────────────────────────────────
+// Transport options
+//───────────────────────────────────────────────────────────────────────────────────
+#[derive(Debug, Default, Clone)]
+pub struct ServiceOptions {
+    pub bind_addr: Option<String>,
+}
+
 // value of the environment variable for flags if any
 const ENV_FLAGS: &str = "DQY_FLAGS";
 
@@ -58,6 +66,9 @@ pub struct CliOptions {
 
     // Dump options to save query or response
     pub dump: DumpOptions,
+
+    // server service related options
+    pub service: ServiceOptions,
 }
 
 impl FromStr for CliOptions {
@@ -464,6 +475,18 @@ Supported query types: {}
                     .action(ArgAction::SetTrue)
                     .help_heading("EDNS options")
             )
+            //
+            // Service options
+            //
+            .arg(
+                Arg::new("bindaddress")
+                    .short('b')
+                    .long("bindaddress")
+                    .long_help("Set listen address:port for DNS Server.")
+                    .action(ArgAction::Set)
+                    .value_name("BINDADDR")
+                    .help_heading("Service options")
+            )
             //───────────────────────────────────────────────────────────────────────────────────
             // Display options
             //───────────────────────────────────────────────────────────────────────────────────   
@@ -681,6 +704,7 @@ Supported query types: {}
             .get_one::<u16>("port")
             .unwrap_or(&options.transport.transport_mode.default_port());
 
+        
         //───────────────────────────────────────────────────────────────────────────────────
         // build the endpoint
         //───────────────────────────────────────────────────────────────────────────────────
@@ -826,6 +850,13 @@ Supported query types: {}
             set_unset_flag!(options.flags.z, flags, "z", false);
         }
         // trace!("options flags: {:?}", options.flags);
+
+        // options.service.listen_addr
+        if matches.contains_id("bindaddress") {
+            if let Some(addr) = matches.get_one::<String>("bindaddress") {
+                options.service.bind_addr = Some(addr.clone());
+            }
+        }
 
         //───────────────────────────────────────────────────────────────────────────────────
         // EDNS or OPT record and options
