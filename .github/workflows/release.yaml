@@ -168,16 +168,17 @@ jobs:
         run: |
           find artifacts/
           mkdir distbin/
-          cp artifacts/anydnsdqy-i686-unknown-linux-musl/anydnsdqy distbin/anydnsdqy-i686-unknown-linux-musl
-          cp artifacts/anydnsdqy-x86_64-unknown-freebsd/anydnsdqy distbin/anydnsdqy-x86_64-unknown-freebsd
-          cp artifacts/anydnsdqy-i686-unknown-freebsd/anydnsdqy distbin/anydnsdqy-i686-unknown-freebsd
-          cp artifacts/anydnsdqy-armv7-unknown-linux-musleabihf/anydnsdqy distbin/anydnsdqy-armv7-unknown-linux-musleabihf
-          cp artifacts/anydnsdqy-x86_64-apple-darwin/anydnsdqy distbin/anydnsdqy-x86_64-apple-darwin
-          cp artifacts/anydnsdqy-armv7-linux-androideabi/anydnsdqy distbin/anydnsdqy-armv7-linux-androideabi
-          cp artifacts/anydnsdqy-aarch64-apple-darwin/anydnsdqy distbin/anydnsdqy-aarch64-apple-darwin
-          cp artifacts/anydnsdqy-aarch64-linux-android/anydnsdqy distbin/anydnsdqy-aarch64-linux-android
-          cp artifacts/anydnsdqy-x86_64-unknown-linux-musl/anydnsdqy distbin/anydnsdqy-x86_64-unknown-linux-musl
-          cp artifacts/anydnsdqy-aarch64-unknown-linux-musl/anydnsdqy distbin/anydnsdqy-aarch64-unknown-linux-musl
+
+          for i in ./artifacts/* 
+          do
+              if [ -d "$i" ]
+              then
+                  cp LICENSE* "$i"
+                  cp README.md "$i"
+                  tar -cvpzf "${i}.tar.gz" --directory=${i} .
+              fi
+          done
+          cp artifacts/anydnsdqy-*.tar.gz distbin/
 
       - name: Release
         uses: softprops/action-gh-release@v2
