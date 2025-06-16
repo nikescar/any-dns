@@ -90,7 +90,7 @@ jobs:
           - name: Windows x86
             os: windows-latest
             target: i686-pc-windows-msvc
-            build-args: "--profile release-with-symbols --no-default-features --features ring"
+            build-args: "--profile release-with-symbols"
 
     steps:
       - name: Install package for linux
