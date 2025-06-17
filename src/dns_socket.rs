@@ -179,7 +179,7 @@ impl DnsSocket {
         match result.unwrap_err() {
             CustomHandlerError::Unhandled => {
                 // Fallback to ICANN
-                tracing::trace!("Custom handler rejected the query.");
+                tracing::info!("Custom handler rejected the query.");
                 let reply = self.forward_to_icann(query, Duration::from_secs(5)).await?;
                 Ok(reply)
             }

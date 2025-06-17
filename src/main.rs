@@ -206,10 +206,13 @@ impl CustomHandler for MyHandler {
         // }
         self.options.protocol.domain_string = question.qname.to_string();
         self.options.protocol.domain_name = DomainName::try_from(self.options.protocol.domain_string.as_str()).expect("REASON");
-
+        
+        tracing::info!("query name : {}",question.qname.to_string());
+        tracing::info!("cantranslate : {}",cantranslate);
         if cantranslate {
             Ok(self.construct_reply_dqy(query).await) // Reply with A record IP
         } else {
+            tracing::info!("fallback to ICANN DNS");
             Err(CustomHandlerError::Unhandled) // Fallback to ICANN
         }
     }
@@ -583,8 +586,8 @@ impl MyHandler {
                 //     ));
                 // }
                 // "HTTPS" => {
-                //     // HTTPS expects priority, target, and params (as a hex string or base64, depending on your format)
-                //     let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     // HTTPS expects svc_priority, target, and params (as a hex string or base64, depending on your format)
+                //     let svc_priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
                 //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
                 //     // For params, you may need to parse a hex/base64 string or a custom format
                 //     let params_hex = msgpart.get(20).unwrap_or(&"");
@@ -594,7 +597,7 @@ impl MyHandler {
                 //         simple_dns::CLASS::IN,
                 //         120,
                 //         simple_dns::rdata::RData::HTTPS(simple_dns::rdata::HTTPS {
-                //             priority,
+                //             priority: svc_priority,
                 //             target,
                 //             params,
                 //         }),
@@ -614,7 +617,7 @@ impl MyHandler {
     ) -> dnslib::error::Result<MessageList> {
         // BUFFER_SIZE is the size of the buffer used to received data
         let messages = DnsProtocol::sync_process_request(options, transport, BUFFER_SIZE)?;
-
+        tracing::info!("received messages: {:?}", messages);
         Ok(messages)
     }
 
@@ -633,10 +636,12 @@ impl MyHandler {
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoH => {
+                tracing::info!("doh passed");
                 let mut transport = HttpsProtocol::new(&options.transport)?;
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoQ => {
+                tracing::info!("doq passed");
                 let mut transport = QuicProtocol::new(&options.transport).await?;
                 let messages = DnsProtocol::async_process_request(options, &mut transport, BUFFER_SIZE).await?;
                 Ok(messages)
@@ -649,8 +654,6 @@ impl MyHandler {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
-    
-
     // get arguments
     //───────────────────────────────────────────────────────────────────────────────────
     // skip program name
@@ -663,7 +666,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut info = crate::show::QueryInfo::default();
 
     let endpoint = options.clone().transport.endpoint;
-    let mut dns_fallback = String::from("1.1.1.1");
     tracing::info!("primary dns : {}",endpoint);
     for addr in &endpoint.addrs {
         // ignore ipv6 for now  
@@ -671,17 +673,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tracing::warn!("Ignoring IPv6 address: {}", addr.ip());
             continue;
         }
-        dns_fallback = addr.ip().to_string();
     }
-    dns_fallback.push_str(":53");
-    tracing::info!("fallback dns : {}",dns_fallback);
+    
     // parse and reply
     let handler: MyHandler = MyHandler { options: options.clone(), info };
     let bind_addr = options.service.bind_addr.clone().unwrap_or_else(|| "0.0.0.0:53".to_string());
+    let fallback_addr = options.service.fallback_addr.clone().unwrap_or_else(|| "1.1.1.1:53".to_string());
+    tracing::info!("fallback dns : {}",fallback_addr);
     tracing::info!("Listening on {}. Waiting for Ctrl-C...", bind_addr);
     let anydns: server::AnyDNS = Builder::new()
         .handler(handler)
-        .icann_resolver(dns_fallback.parse().unwrap())
+        .icann_resolver(fallback_addr.parse().unwrap())
         .listen(bind_addr.parse().unwrap())
         .build()
         .await?;

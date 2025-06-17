@@ -19,6 +19,7 @@ use dnslib::dns::rfc::{flags::BitFlags, qclass::QClass, qtype::QType};
 use dnslib::error::Error;
 use dnslib::transport::network::{IPVersion, Protocol};
 use dnslib::transport::{endpoint::EndPoint, TransportOptions};
+use http::version::Version;
 
 use crate::cli_options::{DnsProtocolOptions, EdnsOptions};
 use crate::show::{DisplayOptions, DumpOptions};
@@ -29,6 +30,7 @@ use crate::show::{DisplayOptions, DumpOptions};
 #[derive(Debug, Default, Clone)]
 pub struct ServiceOptions {
     pub bind_addr: Option<String>,
+    pub fallback_addr: Option<String>,
 }
 
 // value of the environment variable for flags if any
@@ -180,47 +182,47 @@ Supported query types: {}
             .bin_name("anydnsdqy")
             .no_binary_name(true)
             .override_usage(usage)
-            // .arg(
-            //     Arg::new("type")
-            //         .short('t')
-            //         .long("type")
-            //         .long_help("Resource record type to query.")
-            //         .action(ArgAction::Append)
-            //         .num_args(1..255)
-            //         .value_delimiter(',')
-            //         .value_name("TYPE")
-            //         .value_parser(validate_qtypes)
-            //         .default_value("NS")
-            // )
-            // .arg(
-            //     Arg::new("class")
-            //         .short('c')
-            //         .long("class")
-            //         .long_help(
-            //             "Query class as specified in RFC1035. Possible values: IN, CS, CH, HS.",
-            //         )
-            //         .action(ArgAction::Set)
-            //         .value_name("CLASS")
-            //         .value_parser(clap::value_parser!(QClass))
-            //         .default_value("IN")
-            // )
-            // .arg(
-            //     Arg::new("domain")
-            //         .short('d')
-            //         .long("domain")
-            //         .long_help("Domain name to query.")
-            //         .action(ArgAction::Set)
-            //         .required(false)
-            //         .value_name("DOMAIN")
-            // )
-            // .arg(
-            //     Arg::new("ptr")
-            //         .short('x')
-            //         .long("ptr")
-            //         .long_help("Reverses DNS lookup. If used, other query types are ignored.")
-            //         .action(ArgAction::Set)
-            //         .value_name("PTR")
-            // )
+            .arg(
+                Arg::new("type")
+                    .short('t')
+                    .long("type")
+                    .long_help("Resource record type to query.")
+                    .action(ArgAction::Append)
+                    .num_args(1..255)
+                    .value_delimiter(',')
+                    .value_name("TYPE")
+                    .value_parser(validate_qtypes)
+                    .default_value("NS")
+            )
+            .arg(
+                Arg::new("class")
+                    .short('c')
+                    .long("class")
+                    .long_help(
+                        "Query class as specified in RFC1035. Possible values: IN, CS, CH, HS.",
+                    )
+                    .action(ArgAction::Set)
+                    .value_name("CLASS")
+                    .value_parser(clap::value_parser!(QClass))
+                    .default_value("IN")
+            )
+            .arg(
+                Arg::new("domain")
+                    .short('d')
+                    .long("domain")
+                    .long_help("Domain name to query.")
+                    .action(ArgAction::Set)
+                    .required(false)
+                    .value_name("DOMAIN")
+            )
+            .arg(
+                Arg::new("ptr")
+                    .short('x')
+                    .long("ptr")
+                    .long_help("Reverses DNS lookup. If used, other query types are ignored.")
+                    .action(ArgAction::Set)
+                    .value_name("PTR")
+            )
             // .arg(
             //     Arg::new("trace")
             //         .long("trace")
@@ -487,6 +489,15 @@ Supported query types: {}
                     .value_name("BINDADDR")
                     .help_heading("Service options")
             )
+            .arg(
+                Arg::new("fallbackaddress")
+                    .short('f')
+                    .long("fallbackaddress")
+                    .long_help("Set fallback dns address:port for DNS Server.")
+                    .action(ArgAction::Set)
+                    .value_name("FBACKADDR")
+                    .help_heading("Service options")
+            )
             //───────────────────────────────────────────────────────────────────────────────────
             // Display options
             //───────────────────────────────────────────────────────────────────────────────────   
@@ -684,14 +695,14 @@ Supported query types: {}
             options.transport.transport_mode = Protocol::DoH;
 
             // set HTTP version
-            // let v = matches.get_one::<String>("https-version").unwrap().to_string();
+            let v = matches.get_one::<String>("https-version").unwrap().to_string();
 
-            // match v.as_str() {
-            //     "v1" => options.transport.https_version = Some(version::Version::HTTP_11),
-            //     "v2" => options.transport.https_version = Some(version::Version::HTTP_2),
-            //     "v3" => options.transport.https_version = Some(version::Version::HTTP_3),
-            //     _ => unimplemented!("this version of HTTP is not implemented"),
-            // }
+            match v.as_str() {
+                "v1" => options.transport.https_version = Some(Version::HTTP_11),
+                "v2" => options.transport.https_version = Some(Version::HTTP_2),
+                "v3" => options.transport.https_version = Some(Version::HTTP_3),
+                _ => unimplemented!("this version of HTTP is not implemented"),
+            }
         }
         if matches.get_flag("doq") || server.starts_with("quic://") {
             options.transport.transport_mode = Protocol::DoQ;
@@ -739,11 +750,11 @@ Supported query types: {}
         //───────────────────────────────────────────────────────────────────────────────────
         // QTypes, QClass
         //───────────────────────────────────────────────────────────────────────────────────
-        // if options.protocol.qtype.is_empty() {
-        //     let vals: Vec<QType> = matches.get_many("type").unwrap().copied().collect();
-        //     options.protocol.qtype = vals;
-        // }
-        // options.protocol.qclass = *matches.get_one::<QClass>("class").unwrap();
+        if options.protocol.qtype.is_empty() {
+            let vals: Vec<QType> = matches.get_many("type").unwrap().copied().collect();
+            options.protocol.qtype = vals;
+        }
+        options.protocol.qclass = *matches.get_one::<QClass>("class").unwrap();
 
         //───────────────────────────────────────────────────────────────────────────────────
         // ip versions (Any is by default)
@@ -771,9 +782,9 @@ Supported query types: {}
         //───────────────────────────────────────────────────────────────────────────────────
         // if --domain, take it
         //───────────────────────────────────────────────────────────────────────────────────
-        // if let Some(domain) = matches.get_one::<String>("domain") {
-        //     options.protocol.domain_string = domain.to_string();
-        // }
+        if let Some(domain) = matches.get_one::<String>("domain") {
+            options.protocol.domain_string = domain.to_string();
+        }
 
         //───────────────────────────────────────────────────────────────────────────────────
         // bufsize
@@ -791,36 +802,36 @@ Supported query types: {}
         //───────────────────────────────────────────────────────────────────────────────────
         // if reverse query, ignore all other options
         //───────────────────────────────────────────────────────────────────────────────────
-        // if let Some(ip) = matches.get_one::<String>("ptr") {
-        //     // reverse query uses PTR
-        //     options.protocol.qtype = vec![QType::PTR];
-        //     options.protocol.qclass = QClass::IN;
+        if let Some(ip) = matches.get_one::<String>("ptr") {
+            // reverse query uses PTR
+            options.protocol.qtype = vec![QType::PTR];
+            options.protocol.qclass = QClass::IN;
 
-        //     // try to convert to a valid IP address
-        //     let addr = IpAddr::from_str(ip).map_err(|e| Error::IPParse(e, ip.to_string()))?;
+            // try to convert to a valid IP address
+            let addr = IpAddr::from_str(ip).map_err(|e| Error::IPParse(e, ip.to_string()))?;
 
-        //     if addr.is_ipv4() {
-        //         let mut limbs: Vec<_> = ip.split('.').collect();
-        //         limbs.reverse();
-        //         options.protocol.domain_string = format!("{}.in-addr.arpa", limbs.join("."));
-        //     } else {
-        //         // get individual u8 values because an ipv6 address might omit a heading 0
-        //         // ex: 2001:470:30:84:e276:63ff:fe72:3900 => 2001:0470:0030:84:e276:63ff:fe72:3900
+            if addr.is_ipv4() {
+                let mut limbs: Vec<_> = ip.split('.').collect();
+                limbs.reverse();
+                options.protocol.domain_string = format!("{}.in-addr.arpa", limbs.join("."));
+            } else {
+                // get individual u8 values because an ipv6 address might omit a heading 0
+                // ex: 2001:470:30:84:e276:63ff:fe72:3900 => 2001:0470:0030:84:e276:63ff:fe72:3900
 
-        //         // this will convert to ["2001", "0470", "0030", "0084", "e276", "63ff", "fe72", "3900"]
-        //         let split = ip
-        //             .split(':') // split accordsing to ":"
-        //             .map(|x| format!("{:0>4}", x)) // convert to string with heading 0
-        //             .collect::<Vec<String>>()
-        //             .join(""); // and finally join to get a whole string
+                // this will convert to ["2001", "0470", "0030", "0084", "e276", "63ff", "fe72", "3900"]
+                let split = ip
+                    .split(':') // split accordsing to ":"
+                    .map(|x| format!("{:0>4}", x)) // convert to string with heading 0
+                    .collect::<Vec<String>>()
+                    .join(""); // and finally join to get a whole string
 
-        //         // now reverse and join each digit with .
-        //         let mut domain: Vec<_> = split.split("").filter(|x| !x.is_empty()).collect();
-        //         domain.reverse();
+                // now reverse and join each digit with .
+                let mut domain: Vec<_> = split.split("").filter(|x| !x.is_empty()).collect();
+                domain.reverse();
 
-        //         options.protocol.domain_string = format!("{}.ip6.arpa", domain.join("."));
-        //     }
-        // }
+                options.protocol.domain_string = format!("{}.ip6.arpa", domain.join("."));
+            }
+        }
 
         //───────────────────────────────────────────────────────────────────────────────────
         // Flags
@@ -855,6 +866,12 @@ Supported query types: {}
         if matches.contains_id("bindaddress") {
             if let Some(addr) = matches.get_one::<String>("bindaddress") {
                 options.service.bind_addr = Some(addr.clone());
+            }
+        }
+
+        if matches.contains_id("fallbackaddress") {
+            if let Some(addr) = matches.get_one::<String>("fallbackaddress") {
+                options.service.fallback_addr = Some(addr.clone());
             }
         }
 

@@ -53,7 +53,7 @@ TXT
 
 ## Todo
 
-DQY Supported But Implemented Types
+DQY Supported But Not Implemented Types
 ```
 NAPTR
 MD

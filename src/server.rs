@@ -16,7 +16,7 @@ pub struct Builder {
 impl Builder {
     pub fn new() -> Self {
         Self {
-            icann_resolver: SocketAddr::from(([192, 168, 1, 1], 53)),
+            icann_resolver: SocketAddr::from(([1, 1, 1, 1], 53)),
             listen: SocketAddr::from(([0, 0, 0, 0], 53)),
             handler: HandlerHolder::new(EmptyHandler::new()),
         }
