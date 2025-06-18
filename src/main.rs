@@ -29,7 +29,7 @@ use dns_socket::{DnsSocket};
 use async_trait::async_trait;
 use dnslib::dns::rfc::domain::DomainName;
 use simple_dns::{CharacterString, Name, Packet, ResourceRecord, QTYPE, TYPE};
-use simple_dns::rdata::{AAAA, A};
+use simple_dns::rdata::{AAAA, A, TXT, CNAME, HINFO, MX, PTR, SOA, SRV, HTTPS, AFSDB, LOC, SVCB };
 use simple_dns::rdata::RData::NS;
 use crate::args::CliOptions;
 use crate::protocol::DnsProtocol;
@@ -58,6 +58,8 @@ impl CustomHandler for MyHandler {
         let packet = Packet::parse(query).unwrap();
         let mut question = packet.questions.get(0).expect("Valid query");
         let mut cantranslate = false;
+
+        self.options.protocol.qtype.clear();
         // simple dns type does not exists
         if question.qtype == QTYPE::TYPE(TYPE::A){
             self.options.protocol.qtype.push(QType::A);
@@ -76,6 +78,15 @@ impl CustomHandler for MyHandler {
         // }
         // if question.qtype == QTYPE::TYPE(TYPE::CAA){ // unknown query type: caa
         //     self.options.protocol.qtype.push(QType::CAA)
+        // }
+        // if question.qtype == QTYPE::TYPE(TYPE::SVCB){ // unknown query type: svcb
+        //     self.options.protocol.qtype.push(QType::SVCB)
+        // }
+        // if question.qtype == QTYPE::TYPE(TYPE::HTTPS){ // unknown query type: https
+        //     self.options.protocol.qtype.push(QType::HTTPS)
+        // }
+        // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: otp
+        //     self.options.protocol.qtype.push(QType::OPT)
         // }
         // if question.qtype == QTYPE::TYPE(TYPE::CDNSKEY){
         //     self.options.protocol.qtype.push(QType::CDNSKEY)
@@ -121,9 +132,6 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::HIP){
         //     self.options.protocol.qtype.push(QType::HIP)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::HTTPS){ // unknown query type: https
-        //     self.options.protocol.qtype.push(QType::HTTPS)
-        // }
         // if question.qtype == QTYPE::TYPE(TYPE::IPSECKEY){
         //     self.options.protocol.qtype.push(QType::IPSECKEY)
         // }
@@ -138,10 +146,10 @@ impl CustomHandler for MyHandler {
             self.options.protocol.qtype.push(QType::MX);
             cantranslate = true;
         }
-        // if question.qtype == QTYPE::TYPE(TYPE::NAPTR){ // unknown query type: naptr
-        //     self.options.protocol.qtype.push(QType::NAPTR);
-        //     cantranslate = true;
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::NAPTR){ // unknown query type: naptr
+            self.options.protocol.qtype.push(QType::NAPTR);
+            cantranslate = true;
+        }
         if question.qtype == QTYPE::TYPE(TYPE::NS){ // nslookup -type=ns google.com 8.8.8.8
             self.options.protocol.qtype.push(QType::NS);
             cantranslate = true;
@@ -157,9 +165,6 @@ impl CustomHandler for MyHandler {
         // }
         // if question.qtype == QTYPE::TYPE(TYPE::OPENPGPKEY){
         //     self.options.protocol.qtype.push(QType::OPENPGPKEY)
-        // }
-        // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: otp
-        //     self.options.protocol.qtype.push(QType::OPT)
         // }
         if question.qtype == QTYPE::TYPE(TYPE::PTR){ // nslookup -type=ptr google.com 8.8.8.8
             self.options.protocol.qtype.push(QType::PTR);
@@ -185,9 +190,6 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::SSHFP){
         //     self.options.protocol.qtype.push(QType::SSHFP)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::SVCB){ // unknown query type: svcb
-        //     self.options.protocol.qtype.push(QType::SVCB)
-        // }
         // if question.qtype == QTYPE::TYPE(TYPE::TLSA){
         //     self.options.protocol.qtype.push(QType::TLSA)
         // }
@@ -206,13 +208,13 @@ impl CustomHandler for MyHandler {
         // }
         self.options.protocol.domain_string = question.qname.to_string();
         self.options.protocol.domain_name = DomainName::try_from(self.options.protocol.domain_string.as_str()).expect("REASON");
-        
-        tracing::info!("query name : {}",question.qname.to_string());
-        tracing::info!("cantranslate : {}",cantranslate);
+        tracing::debug!("qtype : {:?}", question.qtype.clone());
+        tracing::debug!("query name : {}",question.qname.to_string());
+        tracing::debug!("cantranslate : {}",cantranslate);
         if cantranslate {
             Ok(self.construct_reply_dqy(query).await) // Reply with A record IP
         } else {
-            tracing::info!("fallback to ICANN DNS");
+            tracing::debug!("fallback to ICANN DNS");
             Err(CustomHandlerError::Unhandled) // Fallback to ICANN
         }
     }
@@ -228,80 +230,102 @@ impl MyHandler {
 
     // Construct reply from dqy MessageList
     async fn construct_reply_dqy(&self, query: &Vec<u8>) -> Vec<u8> {
-        // tracing::info!("#### msg construct_reply_dqy ####");
-        let messages = self.get_messages(self.info.clone(), &self.options).await;
-        let messagestr = messages.unwrap();
-        // tracing::info!("{}",messagestr);
-        // ["\u{1b}[106;30mQUERY\u{1b}[0m", "\u{1b}[94mHEADER\u{1b}[0m(\u{1b}[96mid\u{1b}[0m:0xAD45(44357)", "\u{1b}[96mflags\u{1b}[0m:<rd", ">", "\u{1b}[96mqd_count\u{1b}[0m:1)", "\u{1b}[94mQUESTION\u{1b}[0m(\u{1b}[96mqname\u{1b}[0m:google.com.", "\u{1b}[96mqtype\u{1b}[0m:AAAA", "\u{1b}[96mqclass\u{1b}[0m:IN)", "\u{1b}[94mADDITIONAL\u{1b}[0m:(OPT(.", "OPT", "1232", "0", "0", "0))google.com.", "AAAA", "IN", "60", "16", "2404:6800:400a:805::200e", ".", "OPT", "1232", "0", "0", "0", "0"]
-
         let packet = Packet::parse(query).unwrap();
         let question = packet.questions.get(0).expect("Valid query");
-        let mut reply = Packet::new_reply(packet.id());
+        let messages = self.get_messages(self.info.clone(), &self.options).await;
 
+        let messagestr = messages.unwrap();
+        tracing::debug!("##########################################");
+        tracing::debug!("{}",messagestr);
+        tracing::debug!("##########################################");
+        // ["\u{1b}[106;30mQUERY\u{1b}[0m", "\u{1b}[94mHEADER\u{1b}[0m(\u{1b}[96mid\u{1b}[0m:0xAD45(44357)", "\u{1b}[96mflags\u{1b}[0m:<rd", ">", "\u{1b}[96mqd_count\u{1b}[0m:1)", "\u{1b}[94mQUESTION\u{1b}[0m(\u{1b}[96mqname\u{1b}[0m:google.com.", "\u{1b}[96mqtype\u{1b}[0m:AAAA", "\u{1b}[96mqclass\u{1b}[0m:IN)", "\u{1b}[94mADDITIONAL\u{1b}[0m:(OPT(.", "OPT", "1232", "0", "0", "0))google.com.", "AAAA", "IN", "60", "16", "2404:6800:400a:805::200e", ".", "OPT", "1232", "0", "0", "0", "0"]
+        let mut reply = Packet::new_reply(packet.id());
+        //reply.answers.push(ResourceRecord::new(messages));
         reply.questions.push(question.clone());
         if messagestr.len() == 0 {
             reply.build_bytes_vec().unwrap()
         }else{
             let rsvtext = messagestr.to_string();
-            let msgpart: Vec<&str> =  rsvtext.split_whitespace().collect();
-            // tracing::info!("{:?}",msgpart);
-            // tracing::info!("{}",rsvtext);
-
-            let rststr: String = msgpart[18].clone().to_string();
-            let rststrmx: String = msgpart[19].clone().to_string();
-            match msgpart[14] {
+            let mut lines = rsvtext.lines();
+            lines.next();
+            let msgpart: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+            tracing::debug!("{:?}",msgpart);
+            // tracing::debug!("{}",rsvtext);
+            tracing::debug!("msgpart[13]: {}", msgpart[13]);
+            match msgpart[13] {
                 "AAAA" => {
+                    let mut rststr: String = msgpart[17].clone().to_string();
                     let rdata: Ipv6Addr = rststr.parse().unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[16].parse().unwrap_or(120),
                         simple_dns::rdata::RData::AAAA(rdata.try_into().unwrap()),
                     ));
                 }
                 "MX" => {
-                    let preference: u16 = msgpart[18].parse().unwrap();
-                    let exchange = Name::new(rststrmx.as_str()).unwrap();
+                    let preference: u16 = msgpart[17].parse().unwrap();
+                    let exchange = Name::new(msgpart[18]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::MX(simple_dns::rdata::MX { preference, exchange }),
                     ));
                 }
                 "A" => {
+                    let mut rststr: String = msgpart[17].clone().to_string();
                     let rdata: Ipv4Addr = rststr.parse().unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[16].parse().unwrap_or(120),
                         simple_dns::rdata::RData::A(rdata.try_into().unwrap()),
                     ));
                 }
                 "NS" => {
-                    let nsdname = Name::new(rststr.as_str()).unwrap();
+                    let nsdname = Name::new(msgpart[17]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::NS(simple_dns::rdata::NS::from(nsdname)),
                     ));
+                    loop {
+                        let msgpart2: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+                        tracing::debug!("msgpart2: {}", msgpart2[0]);
+                        let domain = Name::new(msgpart2[0]).unwrap();
+                        let nstype = Name::new(msgpart2[1]).unwrap();
+                        let eta = msgpart2[3].to_string();
+                        if domain.to_string() == "." {
+                            break;
+                        }
+                        if nstype.to_string() != "A" && nstype.to_string() != "AAAA"  {
+                            continue;
+                        }
+                        reply.answers.push(ResourceRecord::new(
+                            question.qname.clone(),
+                            simple_dns::CLASS::IN,
+                            eta.parse().unwrap_or(120),
+                            simple_dns::rdata::RData::NS(simple_dns::rdata::NS::from(domain)),
+                        ));
+                    }
                 }
                 "CNAME" => {
-                    let cname = Name::new(rststr.as_str()).unwrap();
+                    let cname = Name::new(msgpart[17]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::CNAME(simple_dns::rdata::CNAME::from(cname)),
                     ));
                 }
                 "MB" => {
-                    let madname = Name::new(rststr.as_str()).unwrap();
+                    let madname = Name::new(msgpart[17]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::MB(simple_dns::rdata::MB::from(madname)),
                     ));
                 }
@@ -324,11 +348,11 @@ impl MyHandler {
                 //     ));
                 // }
                 "PTR" => {
-                    let ptrdname = Name::new(rststr.as_str()).unwrap();
+                    let ptrdname = Name::new(msgpart[17]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::PTR(simple_dns::rdata::PTR::from(ptrdname)),
                     ));
                 }
@@ -342,52 +366,56 @@ impl MyHandler {
                 //     ));
                 // }
                 "HINFO" => {
+                    let ptrdname = Name::new(msgpart[17]).unwrap();
                     let cpu = msgpart.get(18).unwrap_or(&"");
                     let os = msgpart.get(19).unwrap_or(&"");
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::HINFO(simple_dns::rdata::HINFO {
                             cpu: simple_dns::CharacterString::try_from(cpu.to_string()).unwrap(),
                             os: simple_dns::CharacterString::try_from(os.to_string()).unwrap(),
                         }),
                     ));
                 }
-                // "MINFO" => {
-                //     let rmailbx = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
-                //     let emailbx = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
-                //     reply.answers.push(ResourceRecord::new(
-                //         question.qname.clone(),
-                //         simple_dns::CLASS::IN,
-                //         120,
-                //         simple_dns::rdata::RData::MINFO(simple_dns::rdata::MINFO {
-                //             rmailbx,
-                //             emailbx,
-                //         }),
-                //     ));
-                // }
                 "TXT" => {
-                    let txt = msgpart.get(18).unwrap_or(&"");
+                    let nsdname = TXT::new().with_string(msgpart[17]).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
-                        simple_dns::rdata::RData::TXT(simple_dns::rdata::TXT::new().with_string(txt).expect("REASON")),
+                        msgpart[15].parse().unwrap_or(120),
+                        simple_dns::rdata::RData::TXT(simple_dns::rdata::TXT::from(nsdname)),
                     ));
+                    loop {
+                        let msgpart2: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+                        let domain = Name::new(msgpart2[0]).unwrap();
+                        let txtrecord = TXT::new().with_string(msgpart2[5]).unwrap();
+                        let nstype = Name::new(msgpart2[1]).unwrap();
+                        let eta = msgpart2[3].to_string();
+                        if domain.to_string() == "." {
+                            break;
+                        }
+                        reply.answers.push(ResourceRecord::new(
+                            question.qname.clone(),
+                            simple_dns::CLASS::IN,
+                            eta.parse().unwrap_or(120),
+                            simple_dns::rdata::RData::TXT(simple_dns::rdata::TXT::from(txtrecord)),
+                        ));
+                    }
                 }
                 "SOA" => {
-                    let mname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
-                    let rname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
-                    let serial = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
-                    let refresh = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
-                    let retry = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
-                    let expire = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
-                    let minimum = msgpart.get(24).unwrap_or(&"0").parse().unwrap_or(0);
+                    let mname = Name::new(msgpart.get(17).unwrap_or(&"")).unwrap();
+                    let rname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
+                    let serial = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                    let refresh = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                    let retry = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
+                    let expire = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
+                    let minimum = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::SOA(simple_dns::rdata::SOA {
                             mname,
                             rname,
@@ -400,9 +428,9 @@ impl MyHandler {
                     ));
                 }
                 // "WKS" => {
-                //     let address: Ipv4Addr = msgpart.get(18).unwrap_or(&"0.0.0.0").parse().unwrap();
-                //     let protocol: u8 = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                //     let bitmap_hex = msgpart.get(20).unwrap_or(&"");
+                //     let address: Ipv4Addr = msgpart2.get(0).unwrap_or(&"0.0.0.0").parse().unwrap();
+                //     let protocol: u8 = msgpart2.get(1).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let bitmap_hex = msgpart2.get(2).unwrap_or(&"");
                 //     let bitmap = hex::decode(bitmap_hex).unwrap_or_default();
                 //     reply.answers.push(ResourceRecord::new(
                 //         question.qname.clone(),
@@ -416,14 +444,14 @@ impl MyHandler {
                 //     ));
                 // }
                 "SRV" => {
-                    let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                    let weight = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                    let port = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
-                    let target = Name::new(msgpart.get(21).unwrap_or(&"")).unwrap();
+                    let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let weight = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                    let port = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                    let target = Name::new(msgpart.get(20).unwrap_or(&"")).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::SRV(simple_dns::rdata::SRV {
                             priority,
                             weight,
@@ -433,12 +461,12 @@ impl MyHandler {
                     ));
                 }
                 // "RP" => {
-                //     let mbox_dname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
-                //     let txt_dname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     let mbox_dname = Name::new(msgpart.get(17).unwrap_or(&"")).unwrap();
+                //     let txt_dname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
                 //     reply.answers.push(ResourceRecord::new(
                 //         question.qname.clone(),
                 //         simple_dns::CLASS::IN,
-                //         120,
+                //         msgpart[15].parse().unwrap_or(120),
                 //         simple_dns::rdata::RData::RP(simple_dns::rdata::RP {
                 //             mbox_dname,
                 //             txt_dname,
@@ -447,12 +475,12 @@ impl MyHandler {
                 // }
                 "AFSDB" => {
                     // AFSDB expects subtype and hostname
-                    let subtype = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                    let hostname = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                    let subtype = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let hostname = Name::new(msgpart.get(18).unwrap_or(&"")).unwrap();
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::AFSDB(simple_dns::rdata::AFSDB {
                             subtype,
                             hostname,
@@ -461,8 +489,8 @@ impl MyHandler {
                 }
                 // "ISDN" => {
                 //     // ISDN expects address and optional sa
-                //     let address = msgpart.get(18).unwrap_or(&"").to_string();
-                //     let sa = msgpart.get(19).map(|s| s.to_string());
+                //     let address = msgpart2.get(0).unwrap_or(&"").to_string();
+                //     let sa = msgpart2.get(1).map(|s| s.to_string());
                 //     reply.answers.push(ResourceRecord::new(
                 //         question.qname.clone(),
                 //         simple_dns::CLASS::IN,
@@ -505,20 +533,20 @@ impl MyHandler {
                 //         120,
                 //         simple_dns::rdata::RData::NSAP(nsap),
                 //     ));
-                // }
+                // } 
                 "LOC" => {
                     // LOC expects version, size, horiz_pre, vert_pre, latitude, longitude, altitude
-                    let version = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                    let size = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                    let horiz_pre = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
-                    let vert_pre = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
-                    let latitude = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
-                    let longitude = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
-                    let altitude = msgpart.get(24).unwrap_or(&"0").parse().unwrap_or(0);
+                    let version = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let size = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                    let horiz_pre = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
+                    let vert_pre = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
+                    let latitude = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
+                    let longitude = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
+                    let altitude = msgpart.get(23).unwrap_or(&"0").parse().unwrap_or(0);
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
-                        120,
+                        msgpart[15].parse().unwrap_or(120),
                         simple_dns::rdata::RData::LOC(simple_dns::rdata::LOC {
                             version: version,
                             size: size,
@@ -532,7 +560,7 @@ impl MyHandler {
                 }
                 // "OPT" => {
                 //     // OPT expects UDP payload size, extended RCODE, version, flags, and data
-                //     let udp_payload_size = msgpart.get(18).unwrap_or(&"4096").parse().unwrap_or(4096);
+                //     let udp_packet_size = msgpart.get(18).unwrap_or(&"4096").parse().unwrap_or(4096);
                 //     let extended_rcode = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
                 //     let version = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
                 //     let flags = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
@@ -543,46 +571,60 @@ impl MyHandler {
                 //         simple_dns::CLASS::IN,
                 //         120,
                 //         simple_dns::rdata::RData::OPT(simple_dns::rdata::OPT {
-                //             udp_payload_size,
-                //             extended_rcode,
+                //             udp_packet_size,
                 //             version,
-                //             flags,
-                //             data,
+                //             opt_codes
                 //         }),
                 //     ));
                 // }
                 // "CAA" => {
                 //     // CAA expects flags, tag, value
-                //     let flags = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                //     let tag = msgpart.get(19).unwrap_or(&"").to_string();
-                //     let value = msgpart.get(20).unwrap_or(&"").to_string();
+                //     let flags = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let tag_str = msgpart.get(18).unwrap_or(&"");
+                //     let value_str = msgpart.get(19).unwrap_or(&"");
                 //     reply.answers.push(ResourceRecord::new(
                 //         question.qname.clone(),
                 //         simple_dns::CLASS::IN,
-                //         120,
+                //         msgpart[15].parse().unwrap_or(120),
                 //         simple_dns::rdata::RData::CAA(simple_dns::rdata::CAA {
                 //             flag: flags,
-                //             tag: CharacterString::new(tag.as_ref()).unwrap(),
-                //             value: CharacterString::new(value.as_ref()).unwrap(),
+                //             tag: CharacterString::new(tag_str).unwrap(),
+                //             value: CharacterString::new(value_str).unwrap(),
                 //         }),
                 //     ));
                 // }
                 // "SVCB" => {
                 //     // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
+                //     use std::collections::BTreeMap;
+                //     use std::borrow::Cow;
+
                 //     let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
                 //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
                 //     // For params, you may need to parse a hex/base64 string or a custom format
                 //     let params_hex = msgpart.get(20).unwrap_or(&"");
-                //     let params = hex::decode(params_hex).unwrap_or_default();
+                //     let params_vec = hex::decode(params_hex).unwrap_or_default();
+
+                //     // Dummy parser: expects params as "key:value,key2:value2" in hex, e.g. "0001abcd0002ef"
+                //     // You should replace this with your actual SVCB param parsing logic.
+                //     let mut params_map: BTreeMap<u16, Cow<'_, [u8]>> = BTreeMap::new();
+                //     let mut i = 0;
+                //     while i + 4 <= params_vec.len() {
+                //         let key = u16::from_be_bytes([params_vec[i], params_vec[i + 1]]);
+                //         let len = u16::from_be_bytes([params_vec[i + 2], params_vec[i + 3]]) as usize;
+                //         i += 4;
+                //         if i + len <= params_vec.len() {
+                //             params_map.insert(key, Cow::from(params_vec[i..i + len].to_vec()));
+                //             i += len;
+                //         } else {
+                //             break;
+                //         }
+                //     }
+
                 //     reply.answers.push(ResourceRecord::new(
                 //         question.qname.clone(),
                 //         simple_dns::CLASS::IN,
-                //         120,
-                //         simple_dns::rdata::RData::SVCB(simple_dns::rdata::SVCB {
-                //             priority: priority,
-                //             target: target,
-                //             params: params
-                //         }),
+                //         msgpart[15].parse().unwrap_or(120),
+                //         simple_dns::rdata::RData::SVCB(SVCB::new(3, Name::new_unchecked("svc4.example.net")))
                 //     ));
                 // }
                 // "HTTPS" => {
@@ -603,6 +645,20 @@ impl MyHandler {
                 //         }),
                 //     ));
                 // }
+                // "HTTPS" => {
+                //     // HTTPS expects svc_priority, target, and params (as a hex string or base64, depending on your format)
+                //     let svc_priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
+                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
+                //     // For params, you may need to parse a hex/base64 string or a custom format
+                //     let params_hex = msgpart.get(20).unwrap_or(&"");
+                //     let params = hex::decode(params_hex).unwrap_or_default();
+                //     reply.answers.push(ResourceRecord::new(
+                //         question.qname.clone(),
+                //         simple_dns::CLASS::IN,
+                //         msgpart[15].parse().unwrap_or(120),
+                //         simple_dns::rdata::RData::HTTPS(simple_dns::rdata::HTTPS),
+                //     ));
+                // }
                 _ => {}
             }
             reply.build_bytes_vec().unwrap()
@@ -617,7 +673,7 @@ impl MyHandler {
     ) -> dnslib::error::Result<MessageList> {
         // BUFFER_SIZE is the size of the buffer used to received data
         let messages = DnsProtocol::sync_process_request(options, transport, BUFFER_SIZE)?;
-        tracing::info!("received messages: {:?}", messages);
+        tracing::debug!("received messages: {:?}", messages);
         Ok(messages)
     }
 
@@ -636,12 +692,22 @@ impl MyHandler {
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoH => {
-                tracing::info!("doh passed");
+                tracing::debug!("doh passed");
                 let mut transport = HttpsProtocol::new(&options.transport)?;
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoQ => {
-                tracing::info!("doq passed");
+                tracing::debug!("doq passed");
+                tracing::debug!("transport_mode : {:?}", options.transport.transport_mode);
+                tracing::debug!("endpoint : {:?}", options.transport.endpoint);
+                tracing::debug!("timeout : {:?}", options.transport.timeout);
+                tracing::debug!("protocol : {:?}", options.protocol);
+                tracing::debug!("service : {:?}", options.service);
+                tracing::debug!("qtype : {:?}", options.protocol.qtype);
+                tracing::debug!("domain_string : {:?}", options.protocol.domain_string);
+                tracing::debug!("domain_name : {:?}", options.protocol.domain_name);
+                tracing::debug!("fallback_addr : {:?}", options.service.fallback_addr);
+                tracing::debug!("bind_addr : {:?}", options.service.bind_addr);
                 let mut transport = QuicProtocol::new(&options.transport).await?;
                 let messages = DnsProtocol::async_process_request(options, &mut transport, BUFFER_SIZE).await?;
                 Ok(messages)
