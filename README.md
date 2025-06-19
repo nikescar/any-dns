@@ -49,6 +49,8 @@ PTR
 SOA
 SRV
 TXT
+SVCB
+HTTPS
 ```
 
 ## Todo
@@ -70,7 +72,5 @@ NSAP
 NSAP_PTR
 OPT
 CAA
-SVCB
-HTTPS
 ```
 

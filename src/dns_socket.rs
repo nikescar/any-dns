@@ -110,7 +110,7 @@ impl DnsSocket {
         tokio::spawn(async move {
             let start = Instant::now();
             let query_packet = Packet::parse(&data).unwrap();
-            let span = tracing::span!(Level::INFO, "", query_id = query_packet.id());
+            let span = tracing::span!(Level::DEBUG, "", query_id = query_packet.id());
             let guard = span.enter();
 
             let question = query_packet.questions.first();

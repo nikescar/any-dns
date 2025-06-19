@@ -79,12 +79,14 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::CAA){ // unknown query type: caa
         //     self.options.protocol.qtype.push(QType::CAA)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::SVCB){ // unknown query type: svcb
-        //     self.options.protocol.qtype.push(QType::SVCB)
-        // }
-        // if question.qtype == QTYPE::TYPE(TYPE::HTTPS){ // unknown query type: https
-        //     self.options.protocol.qtype.push(QType::HTTPS)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::SVCB){ // unknown query type: svcb
+            self.options.protocol.qtype.push(QType::SVCB);
+            cantranslate = true;
+        }
+        if question.qtype == QTYPE::TYPE(TYPE::HTTPS){ // unknown query type: https
+            self.options.protocol.qtype.push(QType::HTTPS);
+            cantranslate = true;
+        }
         // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: otp
         //     self.options.protocol.qtype.push(QType::OPT)
         // }
@@ -593,72 +595,46 @@ impl MyHandler {
                 //         }),
                 //     ));
                 // }
-                // "SVCB" => {
-                //     // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
-                //     use std::collections::BTreeMap;
-                //     use std::borrow::Cow;
+                "SVCB" => {
+                    // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
+                    use std::collections::BTreeMap;
+                    use std::borrow::Cow;
 
-                //     let priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
-                //     // For params, you may need to parse a hex/base64 string or a custom format
-                //     let params_hex = msgpart.get(20).unwrap_or(&"");
-                //     let params_vec = hex::decode(params_hex).unwrap_or_default();
+                    let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let msgbody = msgpart[18..].join(" ");
+                    let msgbodystr = &msgbody;
+                    
+                    let static_str: &'static str = Box::leak(msgbody.into_boxed_str());
+                    let target = Name::new(&static_str).unwrap();
+                    // concat msgpart[18..] and put in Name::new instance
+                    
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        msgpart[15].parse().unwrap_or(120),
+                        simple_dns::rdata::RData::SVCB(SVCB::new(priority, target))
+                    ));
+                }
+                "HTTPS" => {
+                    // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
+                    use std::collections::BTreeMap;
+                    use std::borrow::Cow;
 
-                //     // Dummy parser: expects params as "key:value,key2:value2" in hex, e.g. "0001abcd0002ef"
-                //     // You should replace this with your actual SVCB param parsing logic.
-                //     let mut params_map: BTreeMap<u16, Cow<'_, [u8]>> = BTreeMap::new();
-                //     let mut i = 0;
-                //     while i + 4 <= params_vec.len() {
-                //         let key = u16::from_be_bytes([params_vec[i], params_vec[i + 1]]);
-                //         let len = u16::from_be_bytes([params_vec[i + 2], params_vec[i + 3]]) as usize;
-                //         i += 4;
-                //         if i + len <= params_vec.len() {
-                //             params_map.insert(key, Cow::from(params_vec[i..i + len].to_vec()));
-                //             i += len;
-                //         } else {
-                //             break;
-                //         }
-                //     }
-
-                //     reply.answers.push(ResourceRecord::new(
-                //         question.qname.clone(),
-                //         simple_dns::CLASS::IN,
-                //         msgpart[15].parse().unwrap_or(120),
-                //         simple_dns::rdata::RData::SVCB(SVCB::new(3, Name::new_unchecked("svc4.example.net")))
-                //     ));
-                // }
-                // "HTTPS" => {
-                //     // HTTPS expects svc_priority, target, and params (as a hex string or base64, depending on your format)
-                //     let svc_priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
-                //     // For params, you may need to parse a hex/base64 string or a custom format
-                //     let params_hex = msgpart.get(20).unwrap_or(&"");
-                //     let params = hex::decode(params_hex).unwrap_or_default();
-                //     reply.answers.push(ResourceRecord::new(
-                //         question.qname.clone(),
-                //         simple_dns::CLASS::IN,
-                //         120,
-                //         simple_dns::rdata::RData::HTTPS(simple_dns::rdata::HTTPS {
-                //             priority: svc_priority,
-                //             target,
-                //             params,
-                //         }),
-                //     ));
-                // }
-                // "HTTPS" => {
-                //     // HTTPS expects svc_priority, target, and params (as a hex string or base64, depending on your format)
-                //     let svc_priority = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                //     let target = Name::new(msgpart.get(19).unwrap_or(&"")).unwrap();
-                //     // For params, you may need to parse a hex/base64 string or a custom format
-                //     let params_hex = msgpart.get(20).unwrap_or(&"");
-                //     let params = hex::decode(params_hex).unwrap_or_default();
-                //     reply.answers.push(ResourceRecord::new(
-                //         question.qname.clone(),
-                //         simple_dns::CLASS::IN,
-                //         msgpart[15].parse().unwrap_or(120),
-                //         simple_dns::rdata::RData::HTTPS(simple_dns::rdata::HTTPS),
-                //     ));
-                // }
+                    let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let msgbody = msgpart[18..].join(" ");
+                    let msgbodystr = &msgbody;
+                    
+                    let static_str: &'static str = Box::leak(msgbody.into_boxed_str());
+                    let target = Name::new(&static_str).unwrap();
+                    // concat msgpart[18..] and put in Name::new instance
+                    
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        msgpart[15].parse().unwrap_or(120),
+                        simple_dns::rdata::RData::SVCB(SVCB::new(priority, target))
+                    ));
+                }
                 _ => {}
             }
             reply.build_bytes_vec().unwrap()
@@ -678,6 +654,17 @@ impl MyHandler {
     }
 
     async fn get_messages(&self, info: QueryInfo, options: &CliOptions) -> dnslib::error::Result<MessageList> {
+        tracing::debug!("transport_mode : {:?}", options.transport.transport_mode);
+        tracing::debug!("endpoint : {:?}", options.transport.endpoint);
+        tracing::debug!("timeout : {:?}", options.transport.timeout);
+        tracing::debug!("protocol : {:?}", options.protocol);
+        tracing::debug!("service : {:?}", options.service);
+        tracing::debug!("qtype : {:?}", options.protocol.qtype);
+        tracing::debug!("domain_string : {:?}", options.protocol.domain_string);
+        tracing::debug!("domain_name : {:?}", options.protocol.domain_name);
+        tracing::debug!("fallback_addr : {:?}", options.service.fallback_addr);
+        tracing::debug!("bind_addr : {:?}", options.service.bind_addr);
+        
         match options.transport.transport_mode {
             Protocol::Udp => {
                 let mut transport = UdpProtocol::new(&options.transport)?;
@@ -692,22 +679,10 @@ impl MyHandler {
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoH => {
-                tracing::debug!("doh passed");
                 let mut transport = HttpsProtocol::new(&options.transport)?;
                 self.get_messages_using_sync_transport(info, &mut transport, options).await
             }
             Protocol::DoQ => {
-                tracing::debug!("doq passed");
-                tracing::debug!("transport_mode : {:?}", options.transport.transport_mode);
-                tracing::debug!("endpoint : {:?}", options.transport.endpoint);
-                tracing::debug!("timeout : {:?}", options.transport.timeout);
-                tracing::debug!("protocol : {:?}", options.protocol);
-                tracing::debug!("service : {:?}", options.service);
-                tracing::debug!("qtype : {:?}", options.protocol.qtype);
-                tracing::debug!("domain_string : {:?}", options.protocol.domain_string);
-                tracing::debug!("domain_name : {:?}", options.protocol.domain_name);
-                tracing::debug!("fallback_addr : {:?}", options.service.fallback_addr);
-                tracing::debug!("bind_addr : {:?}", options.service.bind_addr);
                 let mut transport = QuicProtocol::new(&options.transport).await?;
                 let messages = DnsProtocol::async_process_request(options, &mut transport, BUFFER_SIZE).await?;
                 Ok(messages)
