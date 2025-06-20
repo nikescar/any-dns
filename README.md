@@ -51,26 +51,44 @@ SRV
 TXT
 SVCB
 HTTPS
+CAA
 ```
 
 ## Todo
 
 DQY Supported But Not Implemented Types
 ```
-NAPTR
-MD
-MB
-MG
-MR
-MF
-MINFO
-WKS
-RP
-ISDN
-RouteThrough
-NSAP
-NSAP_PTR
-OPT
-CAA
+NAPTR >>
+EUI48 >>
+EUI64 >>
+CERT >>
+ZONEMD
+KX >>
+IPSECKEY >>
+DNAME
+RRSIG >>
+DS >>
+NSEC
+DHCID >>
+-----------------
+DNSKEY >>
+ISDN >>
+MINFO >>
+NSAP >>
+NSEC >>
+RouteThrough >>
+RP >>
+WKS >>
+ZONEMD >>
 ```
 
+simple_dns Not Implemented Types
+```
+NSEC3
+NSEC3PARAM
+OPENPGPKEY
+SSHFP
+TLSA
+URI
+WALLET
+```
