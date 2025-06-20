@@ -19,6 +19,7 @@ use dnslib::transport::{
     tls::TlsProtocol,
     udp::UdpProtocol,
 };
+use std::collections::BTreeSet;
 use std::{error::Error, net::Ipv4Addr};
 use std::borrow::Cow;
 use std::net::Ipv6Addr;
@@ -31,9 +32,41 @@ use dnslib::dns::rfc::domain::DomainName;
 use simple_dns::{CharacterString, Name, Packet, ResourceRecord, QTYPE, TYPE};
 use simple_dns::rdata::{AAAA, A, TXT, CNAME, HINFO, MX, PTR, SOA, SRV, HTTPS, AFSDB, LOC, SVCB };
 use simple_dns::rdata::RData::NS;
+
 use crate::args::CliOptions;
 use crate::protocol::DnsProtocol;
 use crate::show::QueryInfo;
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum SVCParam<'a> {
+    /// Mandatory keys in this RR. Key Code 0.
+    Mandatory(BTreeSet<u16>),
+
+    /// Additional supported protocols. Key Code 1.
+    Alpn(Vec<CharacterString<'a>>),
+
+    /// No support for default protocol. Key Code 2.
+    NoDefaultAlpn,
+
+    /// Port for alternative endpoint. Key Code 3.
+    Port(u16),
+
+    /// IPv4 address hints. Key Code 4.
+    Ipv4Hint(Vec<u32>),
+
+    /// Encrypted ClientHello (ECH) configuration. Key Code 5.
+    Ech(Cow<'a, [u8]>),
+
+    /// IPv6 address hints. Key Code 6.
+    Ipv6Hint(Vec<u128>),
+
+    /// Reserved for invalid keys. Key Code 65535.
+    InvalidKey,
+
+    /// Unknown key format.
+    Unknown(u16, Cow<'a, [u8]>),
+}
+
 
 #[derive(Clone, Debug)]
 struct MyHandler {
@@ -76,9 +109,10 @@ impl CustomHandler for MyHandler {
         // if question.qtype == QTYPE::TYPE(TYPE::APL){
         //     self.options.protocol.qtype.push(QType::APL)
         // }
-        // if question.qtype == QTYPE::TYPE(TYPE::CAA){ // unknown query type: caa
-        //     self.options.protocol.qtype.push(QType::CAA)
-        // }
+        if question.qtype == QTYPE::TYPE(TYPE::CAA){ // unknown query type: caa
+            self.options.protocol.qtype.push(QType::CAA);
+            cantranslate = true;
+        }
         if question.qtype == QTYPE::TYPE(TYPE::SVCB){ // unknown query type: svcb
             self.options.protocol.qtype.push(QType::SVCB);
             cantranslate = true;
@@ -87,7 +121,7 @@ impl CustomHandler for MyHandler {
             self.options.protocol.qtype.push(QType::HTTPS);
             cantranslate = true;
         }
-        // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: otp
+        // if question.qtype == QTYPE::TYPE(TYPE::OPT){ // unknown query type: opt
         //     self.options.protocol.qtype.push(QType::OPT)
         // }
         // if question.qtype == QTYPE::TYPE(TYPE::CDNSKEY){
@@ -237,10 +271,7 @@ impl MyHandler {
         let messages = self.get_messages(self.info.clone(), &self.options).await;
 
         let messagestr = messages.unwrap();
-        tracing::debug!("##########################################");
         tracing::debug!("{}",messagestr);
-        tracing::debug!("##########################################");
-        // ["\u{1b}[106;30mQUERY\u{1b}[0m", "\u{1b}[94mHEADER\u{1b}[0m(\u{1b}[96mid\u{1b}[0m:0xAD45(44357)", "\u{1b}[96mflags\u{1b}[0m:<rd", ">", "\u{1b}[96mqd_count\u{1b}[0m:1)", "\u{1b}[94mQUESTION\u{1b}[0m(\u{1b}[96mqname\u{1b}[0m:google.com.", "\u{1b}[96mqtype\u{1b}[0m:AAAA", "\u{1b}[96mqclass\u{1b}[0m:IN)", "\u{1b}[94mADDITIONAL\u{1b}[0m:(OPT(.", "OPT", "1232", "0", "0", "0))google.com.", "AAAA", "IN", "60", "16", "2404:6800:400a:805::200e", ".", "OPT", "1232", "0", "0", "0", "0"]
         let mut reply = Packet::new_reply(packet.id());
         //reply.answers.push(ResourceRecord::new(messages));
         reply.questions.push(question.clone());
@@ -595,44 +626,156 @@ impl MyHandler {
                 //         }),
                 //     ));
                 // }
-                "SVCB" => {
-                    // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
-                    use std::collections::BTreeMap;
-                    use std::borrow::Cow;
+                // please add CAA types here
+                "CAA" => {
+                    let flags = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let tag_str = msgpart.get(18).unwrap_or(&"");
+                    let tag_str = tag_str.trim_matches('"');
+                    let value_str = msgpart.get(19).unwrap_or(&"");
+                    let value_str = value_str.trim_matches('"');
+                    let check = CharacterString::new(value_str.as_bytes());
+                    let caa = simple_dns::rdata::CAA {
+                            flag: flags,
+                            tag: CharacterString::new(tag_str.as_bytes()).unwrap(),
+                            value: CharacterString::new(value_str.as_bytes()).unwrap()
+                        };
 
-                    let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
-                    let msgbody = msgpart[18..].join(" ");
-                    let msgbodystr = &msgbody;
-                    
-                    let static_str: &'static str = Box::leak(msgbody.into_boxed_str());
-                    let target = Name::new(&static_str).unwrap();
-                    // concat msgpart[18..] and put in Name::new instance
-                    
+                    tracing::debug!("caa val: {:?}, {:?}, {:?}, {:?}", flags, tag_str, value_str, caa.value);
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
                         msgpart[15].parse().unwrap_or(120),
-                        simple_dns::rdata::RData::SVCB(SVCB::new(priority, target))
+                        simple_dns::rdata::RData::CAA(caa),
+                    ));
+                }
+                "SVCB" => {
+                    use std::collections::BTreeMap;
+                    use std::borrow::Cow;
+
+                    let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
+                    let targetstr = msgpart.get(18).unwrap_or(&".").strip_suffix(".").unwrap_or("");
+                    let target =  Name::new_unchecked(targetstr);
+                    tracing::debug!("target: {:?} / {:?}", target, msgpart.get(18));
+                    let mut svcb = SVCB::new(priority, target);
+                    for param in msgpart[19..].iter() {
+                        let parts: Vec<&str> = param.split('=').collect();
+                        let parts: Vec<&str> = parts.iter().map(|s| s.trim_matches('"')).collect();
+                        tracing::debug!("parts01: {:?}, {:?}", parts[0], parts[1]);
+                        if parts.len() == 2 {
+                            if parts[0] == "mandatory" {
+                                // Parse comma-separated list of u16
+                                let set = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<u16>().ok())
+                                    .collect::<BTreeSet<u16>>();
+                                svcb.set_mandatory(set);
+                            } else if parts[0] == "alpn" {
+                                svcb.set_alpn(
+                                    parts[1]
+                                        .split(',')
+                                        .map(|s| CharacterString::new(s.as_bytes()).unwrap())
+                                        .collect::<Vec<CharacterString>>()
+                                );
+                            } else if parts[0] == "no-default-alpn" {
+                                svcb.set_no_default_alpn();
+                            } else if parts[0] == "ipv4hint" {
+                                // Parse comma-separated list of IPv4 addresses as u32
+                                let hints: Vec<u32> = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<Ipv4Addr>().ok())
+                                    .map(|ip| u32::from(ip))
+                                    .collect();
+                                svcb.set_ipv4hint(hints);
+                            } else if parts[0] == "port" {
+                                svcb.set_port(parts[1].parse().unwrap_or(0));
+                            } else if parts[0] == "ech" {
+                                let ech = parts[1].as_bytes();
+                                svcb.set_param(5, std::borrow::Cow::from(ech));
+                            } else if parts[0] == "ipv6hint" {
+                                // Parse comma-separated list of IPv6 addresses as u128
+                                let hints: Vec<u128> = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<Ipv6Addr>().ok())
+                                    .map(|ip| u128::from(ip))
+                                    .collect();
+                                svcb.set_ipv6hint(hints);
+                            } else {
+                                if let Ok(key) = parts[0].parse::<u16>() {
+                                    svcb.set_param(key, Cow::from(parts[1].as_bytes()));
+                                }
+                            }
+                        }
+                    }
+                    reply.answers.push(ResourceRecord::new(
+                        question.qname.clone(),
+                        simple_dns::CLASS::IN,
+                        msgpart[15].parse().unwrap_or(120),
+                        simple_dns::rdata::RData::SVCB(svcb),
                     ));
                 }
                 "HTTPS" => {
-                    // SVCB expects priority, target, and params (as a hex string or base64, depending on your format)
                     use std::collections::BTreeMap;
                     use std::borrow::Cow;
 
                     let priority = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
-                    let msgbody = msgpart[18..].join(" ");
-                    let msgbodystr = &msgbody;
-                    
-                    let static_str: &'static str = Box::leak(msgbody.into_boxed_str());
-                    let target = Name::new(&static_str).unwrap();
-                    // concat msgpart[18..] and put in Name::new instance
-                    
+                    let targetstr = msgpart.get(18).unwrap_or(&".").strip_suffix(".").unwrap_or("");
+                    let target =  Name::new_unchecked(targetstr);
+                    tracing::debug!("target: {:?} / {:?}", target, msgpart.get(18));
+                    let mut svcb = SVCB::new(priority, target);
+                    for param in msgpart[19..].iter() {
+                        let parts: Vec<&str> = param.split('=').collect();
+                        let parts: Vec<&str> = parts.iter().map(|s| s.trim_matches('"')).collect();
+                        tracing::debug!("parts01: {:?}, {:?}", parts[0], parts[1]);
+                        if parts.len() == 2 {
+                            if parts[0] == "mandatory" {
+                                // Parse comma-separated list of u16
+                                let set = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<u16>().ok())
+                                    .collect::<BTreeSet<u16>>();
+                                svcb.set_mandatory(set);
+                            } else if parts[0] == "alpn" {
+                                svcb.set_alpn(
+                                    parts[1]
+                                        .split(',')
+                                        .map(|s| CharacterString::new(s.as_bytes()).unwrap())
+                                        .collect::<Vec<CharacterString>>()
+                                );
+                            } else if parts[0] == "no-default-alpn" {
+                                svcb.set_no_default_alpn();
+                            } else if parts[0] == "ipv4hint" {
+                                // Parse comma-separated list of IPv4 addresses as u32
+                                let hints: Vec<u32> = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<Ipv4Addr>().ok())
+                                    .map(|ip| u32::from(ip))
+                                    .collect();
+                                svcb.set_ipv4hint(hints);
+                            } else if parts[0] == "port" {
+                                svcb.set_port(parts[1].parse().unwrap_or(0));
+                            } else if parts[0] == "ech" {
+                                let ech = parts[1].as_bytes();
+                                svcb.set_param(5, std::borrow::Cow::from(ech));
+                            } else if parts[0] == "ipv6hint" {
+                                // Parse comma-separated list of IPv6 addresses as u128
+                                let hints: Vec<u128> = parts[1]
+                                    .split(',')
+                                    .filter_map(|s| s.parse::<Ipv6Addr>().ok())
+                                    .map(|ip| u128::from(ip))
+                                    .collect();
+                                svcb.set_ipv6hint(hints);
+                            } else {
+                                if let Ok(key) = parts[0].parse::<u16>() {
+                                    svcb.set_param(key, Cow::from(parts[1].as_bytes()));
+                                }
+                            }
+                        }
+                    }
                     reply.answers.push(ResourceRecord::new(
                         question.qname.clone(),
                         simple_dns::CLASS::IN,
                         msgpart[15].parse().unwrap_or(120),
-                        simple_dns::rdata::RData::SVCB(SVCB::new(priority, target))
+                        simple_dns::rdata::RData::HTTPS(HTTPS::from(svcb))
                     ));
                 }
                 _ => {}
