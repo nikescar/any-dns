@@ -637,7 +637,7 @@ impl MyHandler {
                     let caa = simple_dns::rdata::CAA {
                             flag: flags,
                             tag: CharacterString::new(tag_str.as_bytes()).unwrap(),
-                            value: CharacterString::new(value_str.as_bytes()).unwrap()
+                            value: std::borrow::Cow::from(value_str.as_bytes())
                         };
 
                     tracing::debug!("caa val: {:?}, {:?}, {:?}, {:?}", flags, tag_str, value_str, caa.value);
@@ -668,14 +668,13 @@ impl MyHandler {
                                     .split(',')
                                     .filter_map(|s| s.parse::<u16>().ok())
                                     .collect::<BTreeSet<u16>>();
-                                svcb.set_mandatory(set);
+                                svcb.set_mandatory(set.iter().copied());
                             } else if parts[0] == "alpn" {
-                                svcb.set_alpn(
-                                    parts[1]
-                                        .split(',')
-                                        .map(|s| CharacterString::new(s.as_bytes()).unwrap())
-                                        .collect::<Vec<CharacterString>>()
-                                );
+                                let alpn_vec: Vec<CharacterString> = parts[1]
+                                    .split(',')
+                                    .map(|s| CharacterString::new(s.as_bytes()).unwrap())
+                                    .collect();
+                                svcb.set_alpn(&alpn_vec);
                             } else if parts[0] == "no-default-alpn" {
                                 svcb.set_no_default_alpn();
                             } else if parts[0] == "ipv4hint" {
@@ -685,12 +684,12 @@ impl MyHandler {
                                     .filter_map(|s| s.parse::<Ipv4Addr>().ok())
                                     .map(|ip| u32::from(ip))
                                     .collect();
-                                svcb.set_ipv4hint(hints);
+                                svcb.set_ipv4hint(&hints);
                             } else if parts[0] == "port" {
                                 svcb.set_port(parts[1].parse().unwrap_or(0));
                             } else if parts[0] == "ech" {
                                 let ech = parts[1].as_bytes();
-                                svcb.set_param(5, std::borrow::Cow::from(ech));
+                                svcb.set_param(simple_dns::rdata::SVCParam::Ech(std::borrow::Cow::from(ech)));
                             } else if parts[0] == "ipv6hint" {
                                 // Parse comma-separated list of IPv6 addresses as u128
                                 let hints: Vec<u128> = parts[1]
@@ -698,10 +697,10 @@ impl MyHandler {
                                     .filter_map(|s| s.parse::<Ipv6Addr>().ok())
                                     .map(|ip| u128::from(ip))
                                     .collect();
-                                svcb.set_ipv6hint(hints);
+                                svcb.set_ipv6hint(&hints);
                             } else {
                                 if let Ok(key) = parts[0].parse::<u16>() {
-                                    svcb.set_param(key, Cow::from(parts[1].as_bytes()));
+                                    svcb.set_param(simple_dns::rdata::SVCParam::Unknown(key, Cow::from(parts[1].as_bytes())));
                                 }
                             }
                         }
@@ -733,14 +732,13 @@ impl MyHandler {
                                     .split(',')
                                     .filter_map(|s| s.parse::<u16>().ok())
                                     .collect::<BTreeSet<u16>>();
-                                svcb.set_mandatory(set);
+                                svcb.set_mandatory(set.iter().copied());
                             } else if parts[0] == "alpn" {
-                                svcb.set_alpn(
-                                    parts[1]
-                                        .split(',')
-                                        .map(|s| CharacterString::new(s.as_bytes()).unwrap())
-                                        .collect::<Vec<CharacterString>>()
-                                );
+                                let alpn_vec: Vec<CharacterString> = parts[1]
+                                    .split(',')
+                                    .map(|s| CharacterString::new(s.as_bytes()).unwrap())
+                                    .collect();
+                                svcb.set_alpn(alpn_vec.as_slice());
                             } else if parts[0] == "no-default-alpn" {
                                 svcb.set_no_default_alpn();
                             } else if parts[0] == "ipv4hint" {
@@ -750,12 +748,12 @@ impl MyHandler {
                                     .filter_map(|s| s.parse::<Ipv4Addr>().ok())
                                     .map(|ip| u32::from(ip))
                                     .collect();
-                                svcb.set_ipv4hint(hints);
+                                svcb.set_ipv4hint(&hints);
                             } else if parts[0] == "port" {
                                 svcb.set_port(parts[1].parse().unwrap_or(0));
                             } else if parts[0] == "ech" {
                                 let ech = parts[1].as_bytes();
-                                svcb.set_param(5, std::borrow::Cow::from(ech));
+                                svcb.set_param(simple_dns::rdata::SVCParam::Ech(std::borrow::Cow::from(ech)));
                             } else if parts[0] == "ipv6hint" {
                                 // Parse comma-separated list of IPv6 addresses as u128
                                 let hints: Vec<u128> = parts[1]
@@ -763,10 +761,10 @@ impl MyHandler {
                                     .filter_map(|s| s.parse::<Ipv6Addr>().ok())
                                     .map(|ip| u128::from(ip))
                                     .collect();
-                                svcb.set_ipv6hint(hints);
+                                svcb.set_ipv6hint(&hints);
                             } else {
                                 if let Ok(key) = parts[0].parse::<u16>() {
-                                    svcb.set_param(key, Cow::from(parts[1].as_bytes()));
+                                    svcb.set_param(simple_dns::rdata::SVCParam::Unknown(key, Cow::from(parts[1].as_bytes())));
                                 }
                             }
                         }
