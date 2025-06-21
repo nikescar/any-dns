@@ -62,7 +62,7 @@ NAPTR >>
 EUI48 >>
 EUI64 >>
 CERT >>
-ZONEMD
+ZONEMD >>
 KX >>
 IPSECKEY >>
 DNAME
@@ -79,16 +79,28 @@ NSEC >>
 RouteThrough >>
 RP >>
 WKS >>
-ZONEMD >>
+-----------------
+algorithm
+apl
+csync
+hip
+openpgpkey
+opt
+rrlist
+sshfp
+tlsa
+type_bitmaps
+uri
+wallet
 ```
 
 simple_dns Not Implemented Types
 ```
 NSEC3
 NSEC3PARAM
-OPENPGPKEY
-SSHFP
+OPENPGPKEY >>
+SSHFP >>
 TLSA
-URI
+URI >>
 WALLET
 ```
