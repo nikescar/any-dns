@@ -99,8 +99,8 @@ pub struct DisplayOptions {
     pub sho_resp_header: bool,
 
     // Lua code if specified
-    #[cfg(feature = "mlua")]
-    pub lua_code: Option<String>,
+    // #[cfg(feature = "mlua")]
+    // pub lua_code: Option<String>,
 }
 
 //───────────────────────────────────────────────────────────────────────────────────

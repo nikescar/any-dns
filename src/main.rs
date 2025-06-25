@@ -19,6 +19,7 @@ use dnslib::transport::{
     tls::TlsProtocol,
     udp::UdpProtocol,
 };
+use std::{fmt::Write, num::ParseIntError};
 use std::collections::BTreeSet;
 use std::{error::Error, net::Ipv4Addr};
 use std::borrow::Cow;
@@ -54,6 +55,7 @@ impl CustomHandler for MyHandler {
         query: &Vec<u8>,
         _socket: DnsSocket,
     ) -> Result<Vec<u8>, CustomHandlerError> {
+        tracing::debug!("MyHandler lookup called with query: {:?}", query);
         // query from server socket
         // Parse query with any dns library. Here, we use `simple_dns``.
         let packet = Packet::parse(query).unwrap();
@@ -62,9 +64,10 @@ impl CustomHandler for MyHandler {
 
         self.options.protocol.qtype.clear();
         // ORDER BY SIMPLE_DNS RDATA TYPES
-        // https://github.com/balliegojr/simple-dns/blob/2193a4a05e2ae52b2018b6c9691c28a65591e268/simple-dns/src/dns/rdata/mod.rs#L165
-        // https://github.com/dandyvica/dqy/blob/c2b28be3d185360f9e94a92da95d318c08db9926/src/dns/rfc/mod.rs#L20
-        // https://github.com/dandyvica/dqy/tree/main/src/dns/rfc
+        // simple-dns : https://github.com/balliegojr/simple-dns/blob/2193a4a05e2ae52b2018b6c9691c28a65591e268/simple-dns/src/dns/rdata/mod.rs#L165
+        // dqy : https://github.com/dandyvica/dqy/blob/c2b28be3d185360f9e94a92da95d318c08db9926/src/dns/rfc/mod.rs#L20
+        // dqy : https://github.com/dandyvica/dqy/tree/main/src/dns/rfc
+        // dnsmasq : https://thekelleys.org.uk/gitweb/?p=dnsmasq.git;a=blob;f=src/cache.c;h=857be6e0463dec717c89c8daa51dfbc3ad4498f0;hb=857be6e0463dec717c89c8daa51dfbc3ad4498f0
         // not implemented in simple_dns
         // algorithm apl csync hip nsec3 nsec3param openpgpkey query rdata response
         // rrlist sshfp tlsa type_bitmaps uri wallet
@@ -218,6 +221,7 @@ impl CustomHandler for MyHandler {
         }
         if question.qtype == QTYPE::TYPE(TYPE::DS){
             self.options.protocol.qtype.push(QType::DS);
+            // ** bacause of error transmission ** FIXME
             cantranslate = true; // dqy supports => true
         }
         if question.qtype == QTYPE::TYPE(TYPE::NSEC){
@@ -256,12 +260,17 @@ impl CustomHandler for MyHandler {
         //     self.options.protocol.qtype.push(QType::WALLET);
         //     cantranslate = true;
         // }
-        
-        self.options.protocol.domain_string = question.qname.to_string();
-        self.options.protocol.domain_name = DomainName::try_from(self.options.protocol.domain_string.as_str()).expect("REASON");
+        tracing::trace!("query : {:?}", query);
         tracing::debug!("qtype : {:?}", question.qtype.clone());
         tracing::debug!("query name : {}",question.qname.to_string());
         tracing::debug!("cantranslate : {}",cantranslate);
+        
+        // if question.qname is not empty
+        if !question.qname.to_string().is_empty() {
+            self.options.protocol.domain_string = question.qname.to_string();
+            self.options.protocol.domain_name = DomainName::try_from(self.options.protocol.domain_string.as_str()).expect("REASON");
+        }
+       
         if cantranslate {
             Ok(self.construct_reply_dqy(query).await) // Reply with A record IP
         } else {
@@ -289,6 +298,7 @@ impl MyHandler {
 
         tracing::debug!("messagestr : {}",messagestr);
         let mut reply = Packet::new_reply(packet.id());
+
         reply.questions.push(question.clone());
         if messagestr.len() == 0 {
             reply.build_bytes_vec().unwrap()
@@ -298,21 +308,75 @@ impl MyHandler {
             lines.next(); // Skip firstline : QUERY
             let mut index=0;
             loop {
-                let mut cline: Vec<&str> = lines.next().unwrap().split_whitespace().collect();
+                let mut cline: Vec<&str> = lines.next().unwrap_or("").split_whitespace().collect();
                 let mut msgparts = Vec::new();
                 if index == 0 {
-                    if cline.len() > 12 {
-                        msgparts = cline.split_off(12);
-                        if !msgparts.is_empty() && msgparts[0].starts_with("0))") {
-                            msgparts[0] = &msgparts[0][3..];
+                    let startidx = cline.iter().position(|&r| r.contains("))")).unwrap();
+                    if startidx > 0 {
+                        // extract additional parts
+                        let addidx = cline.iter().position(|&r| r.contains("ADDITIONAL")).unwrap_or(0);
+                        if addidx > 0 && addidx < startidx {
+                            // take additional parts
+                            let addiparts = cline[addidx..(startidx+1)].to_vec();
+                            tracing::trace!("[{:?}]addiparts : {:?}", index, addiparts);
+                            let addidomain = addiparts[0].to_string();
+                            let udp_size = addiparts[2].parse::<u16>().unwrap_or(512);
+                            let ttl = addiparts[3].parse::<u8>().unwrap_or(0); // version
+                            // https://github.com/balliegojr/simple-dns/blob/2193a4a05e2ae52b2018b6c9691c28a65591e268/simple-dns/tests/packet_tests.rs#L119
+                            // https://datatracker.ietf.org/doc/html/rfc2671#section-4.3
+                            *reply.opt_mut() = Some(simple_dns::rdata::OPT {
+                                opt_codes: Default::default(),
+                                udp_packet_size: udp_size,
+                                version: ttl,
+                            });
+                        }
+                        // extract flags
+                        let flagsidx = cline.iter().position(|&r| r.contains("flags")).unwrap_or(0);
+                        let flagsendidx = cline.iter().position(|&r| r.contains(">")).unwrap_or(0);
+                        let mut fidx=0;
+                        if flagsidx > 0 && flagsendidx > flagsidx {
+                            let flags = cline[flagsidx..flagsendidx].to_vec();
+                            tracing::trace!("[{:?}]flags : {:?}", index, flags);
+                            loop {
+                                if fidx >= flags.len() {
+                                    break;
+                                }
+                                let mut fid = flags[fidx];
+                                if fidx == 0 {
+                                    let v: Vec<&str> = flags[0].split("<").collect();
+                                    fid = v[1];
+                                }
+                                if fid == "ad" {
+                                    reply.set_flags(simple_dns::PacketFlag::AUTHENTIC_DATA);
+                                } else if fid == "aa" {
+                                    reply.set_flags(simple_dns::PacketFlag::AUTHORITATIVE_ANSWER);
+                                } else if fid == "tc" {
+                                    reply.set_flags(simple_dns::PacketFlag::TRUNCATION);
+                                } else if fid == "rd" {
+                                    reply.set_flags(simple_dns::PacketFlag::RECURSION_DESIRED);
+                                } else if fid == "ra" {
+                                    reply.set_flags(simple_dns::PacketFlag::RECURSION_AVAILABLE);
+                                } else if fid == "cd" {
+                                    reply.set_flags(simple_dns::PacketFlag::CHECKING_DISABLED);
+                                }
+                                fidx += 1;
+                            }
+                        }
+
+                        // take msg body
+                        msgparts = cline.split_off(startidx);
+                        if !msgparts.is_empty() && msgparts[0].contains("))") {
+                            let v: Vec<&str> = msgparts[0].split("))").collect();
+                            msgparts[0] = &v[1];
                         }
                     }
                 } else {
                     msgparts = cline;
                 }
-                tracing::debug!("[{:?}]msgparts : {:?}", index, msgparts);
+                tracing::trace!("[{:?}]msgparts : {:?}", index, msgparts);
 
-                if msgparts[0] == "." {
+                if msgparts[0] == "." && msgparts[1] == "OPT" && msgparts[2] == "0" && msgparts[3] == "0" && msgparts[4] == "0" && msgparts[5] == "0" && msgparts[6] == "0" {
+                    tracing::debug!("fin {:?}", reply);
                     return reply.build_bytes_vec().unwrap();
                 }
 
@@ -322,6 +386,7 @@ impl MyHandler {
                         let nstype = Name::new(msgparts[1]).unwrap();
                         let mut value: String = msgparts[5].to_string();
                         let rdata: Ipv4Addr = value.parse().unwrap();
+                        tracing::debug!("a val: {:?}, {:?}, {:?}, {:?}", domain, nstype, value, rdata);
                         reply.answers.push(ResourceRecord::new(
                             domain,
                             simple_dns::CLASS::IN,
@@ -334,6 +399,7 @@ impl MyHandler {
                         let nstype = Name::new(msgparts[1]).unwrap();
                         let mut value: String = msgparts[5].to_string();
                         let rdata: Ipv6Addr = value.parse().unwrap();
+                        tracing::debug!("aaaa val: {:?}, {:?}, {:?}, {:?}", domain, nstype, value, rdata);
                         reply.answers.push(ResourceRecord::new(
                             domain,
                             simple_dns::CLASS::IN,
@@ -346,6 +412,7 @@ impl MyHandler {
                         let nstype = Name::new(msgparts[1]).unwrap();
                         let target = Name::new(msgparts[5]).unwrap();
                         let eta = msgparts[3].to_string();
+                        tracing::debug!("ns val: {:?}, {:?}, {:?}, {:?}", domain, nstype, target, eta);
                         reply.answers.push(ResourceRecord::new(
                             domain,
                             simple_dns::CLASS::IN,
@@ -355,6 +422,7 @@ impl MyHandler {
                     }
                     "CNAME" => {
                         let cname = Name::new(msgparts[5]).unwrap();
+                        tracing::debug!("cname val: {:?}", cname);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -364,6 +432,7 @@ impl MyHandler {
                     }
                     "PTR" => {
                         let ptrdname = Name::new(msgparts[5]).unwrap();
+                        tracing::debug!("ptr val: {:?}", ptrdname);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -375,6 +444,7 @@ impl MyHandler {
                         let ptrdname = Name::new(msgparts[5]).unwrap();
                         let cpu = msgparts.get(6).unwrap_or(&"");
                         let os = msgparts.get(7).unwrap_or(&"");
+                        tracing::debug!("hinfo val: {:?}, {:?}", cpu, os);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -388,6 +458,7 @@ impl MyHandler {
                     "MX" => {
                         let preference: u16 = msgparts[5].parse().unwrap();
                         let exchange = Name::new(msgparts[6]).unwrap();
+                        tracing::debug!("mx val: {:?}, {:?}", preference, exchange);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -400,6 +471,7 @@ impl MyHandler {
                         let txtrecord = TXT::new().with_string(msgparts[5]).unwrap();
                         let nstype = Name::new(msgparts[1]).unwrap();
                         let eta = msgparts[3].to_string();
+                        tracing::debug!("txt val: {:?}, {:?}, {:?}, {:?}", domain, txtrecord, nstype, eta);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -415,6 +487,7 @@ impl MyHandler {
                         let retry = msgparts.get(9).unwrap_or(&"0").parse().unwrap_or(0);
                         let expire = msgparts.get(10).unwrap_or(&"0").parse().unwrap_or(0);
                         let minimum = msgparts.get(11).unwrap_or(&"0").parse().unwrap_or(0);
+                        tracing::debug!("soa val: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", mname, rname, serial, refresh, retry, expire, minimum);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -435,6 +508,7 @@ impl MyHandler {
                         let weight = msgparts.get(6).unwrap_or(&"0").parse().unwrap_or(0);
                         let port = msgparts.get(7).unwrap_or(&"0").parse().unwrap_or(0);
                         let target = Name::new(msgparts.get(8).unwrap_or(&"")).unwrap();
+                        tracing::debug!("loc val: {:?}, {:?}, {:?}, {:?}", priority, weight, port, target);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -450,6 +524,7 @@ impl MyHandler {
                     "RP" => {
                         let mbox_dname = Name::new(msgparts.get(5).unwrap_or(&"")).unwrap();
                         let txt_dname = Name::new(msgparts.get(6).unwrap_or(&"")).unwrap();
+                        tracing::debug!("rp val: {:?}, {:?}", mbox_dname, txt_dname);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -464,6 +539,7 @@ impl MyHandler {
                         // AFSDB expects subtype and hostname
                         let subtype = msgparts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
                         let hostname = Name::new(msgparts.get(6).unwrap_or(&"")).unwrap();
+                        tracing::debug!("afsdb val: {:?}, {:?}", subtype, hostname);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -505,6 +581,7 @@ impl MyHandler {
                         let latitude = msgparts.get(9).unwrap_or(&"0").parse().unwrap_or(0);
                         let longitude = msgparts.get(10).unwrap_or(&"0").parse().unwrap_or(0);
                         let altitude = msgparts.get(11).unwrap_or(&"0").parse().unwrap_or(0);
+                        tracing::debug!("loc val: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", version, size, horiz_pre, vert_pre, latitude, longitude, altitude);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -529,6 +606,7 @@ impl MyHandler {
                         let retry = msgparts.get(9).unwrap_or(&"0").parse().unwrap_or(0);
                         let expire = msgparts.get(10).unwrap_or(&"0").parse().unwrap_or(0);
                         let minimum = msgparts.get(11).unwrap_or(&"0").parse().unwrap_or(0);
+                        tracing::debug!("opt val: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", mname, rname, serial, refresh, retry, expire, minimum);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -572,12 +650,10 @@ impl MyHandler {
                         let priority = msgparts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
                         let targetstr = msgparts.get(6).unwrap_or(&".").strip_suffix(".").unwrap_or("");
                         let target =  Name::new_unchecked(targetstr);
-                        tracing::debug!("target: {:?} / {:?}", target, msgparts.get(6));
                         let mut svcb = SVCB::new(priority, target);
                         for param in msgparts[7..].iter() {
                             let parts: Vec<&str> = param.split('=').collect();
                             let parts: Vec<&str> = parts.iter().map(|s| s.trim_matches('"')).collect();
-                            tracing::debug!("parts01: {:?}, {:?}", parts[0], parts[1]);
                             if parts.len() == 2 {
                                 if parts[0] == "mandatory" {
                                     // Parse comma-separated list of u16
@@ -622,6 +698,7 @@ impl MyHandler {
                                 }
                             }
                         }
+                        tracing::debug!("https val: {:?}, {:?}, {:?}", priority, targetstr, svcb);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -636,12 +713,10 @@ impl MyHandler {
                         let priority = msgparts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
                         let targetstr = msgparts.get(6).unwrap_or(&".").strip_suffix(".").unwrap_or("");
                         let target =  Name::new_unchecked(targetstr);
-                        tracing::debug!("target: {:?} / {:?}", target, msgparts.get(6));
                         let mut svcb = SVCB::new(priority, target);
                         for param in msgparts[7..].iter() {
                             let parts: Vec<&str> = param.split('=').collect();
                             let parts: Vec<&str> = parts.iter().map(|s| s.trim_matches('"')).collect();
-                            tracing::debug!("parts01: {:?}, {:?}", parts[0], parts[1]);
                             if parts.len() == 2 {
                                 if parts[0] == "mandatory" {
                                     // Parse comma-separated list of u16
@@ -686,6 +761,7 @@ impl MyHandler {
                                 }
                             }
                         }
+                        tracing::debug!("https val: {:?}, {:?}, {:?}", priority, targetstr, svcb);
                         reply.answers.push(ResourceRecord::new(
                             question.qname.clone(),
                             simple_dns::CLASS::IN,
@@ -764,20 +840,41 @@ impl MyHandler {
                     //     ));
                     // }
                     // "IPSECKEY" => {
-                    //     // IPSECKEY expects precedence, gateway, algorithm, and public key
-                    //     let precedence = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let gateway = msgpart.get(18).map(|s| s.to_string()).unwrap_or_default();
-                    //     let algorithm = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let public_key = msgpart.get(20).map(|s| s.to_string()).unwrap_or_default();
+                    //     // IPSECKEY expects precedence, gateway_type, algorithm, and gateway
+                    //     let precedence = msgparts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
+                    //     let gateway_type = match msgparts.get(6).map(|s| s.to_ascii_uppercase()) {
+                    //         Some(ref s) if s == "IPV4" => 1,
+                    //         Some(ref s) if s == "IPV6" => 2,
+                    //         Some(ref s) if s == "DOMAIN" => 3,
+                    //         Some(s) => {
+                    //             tracing::warn!("Unknown gateway_type: {}", s);
+                    //             0
+                    //         },
+                    //         None => 0,
+                    //     };
+                    //     let algorithm = match msgparts.get(7).map(|s| s.to_ascii_uppercase()) {
+                    //         Some(ref s) if s == "NONE" => 0,
+                    //         Some(ref s) if s == "DSS" => 1,
+                    //         Some(ref s) if s == "RSA" => 2,
+                    //         Some(ref s) if s == "DH" => 3,
+                    //         Some(ref s) if s == "ECDSA" => 4,
+                    //         Some(s) => {
+                    //             tracing::warn!("Unknown algorithm: {}", s);
+                    //             0
+                    //         },
+                    //         None => 0,
+                    //     };
+                    //     let gateway = msgparts.get(8).map(|s| Name::new(s).unwrap()).unwrap_or(Name::new(".").unwrap());
+                    //     tracing::debug!("ipseckey val: {:?}, {:?}, {:?}, {:?}", precedence, gateway_type, algorithm, gateway);
                     //     reply.answers.push(ResourceRecord::new(
                     //         question.qname.clone(),
                     //         simple_dns::CLASS::IN,
                     //         msgparts[3].parse().unwrap_or(120),
                     //         simple_dns::rdata::RData::IPSECKEY(simple_dns::rdata::IPSECKEY {
                     //             precedence,
-                    //             gateway: std::borrow::Cow::from(gateway.as_bytes()),
+                    //             gateway_type,
                     //             algorithm,
-                    //             public_key: std::borrow::Cow::from(public_key.as_bytes()),
+                    //             gateway,
                     //         }),
                     //     ));
                     // }
@@ -791,48 +888,164 @@ impl MyHandler {
                     //         simple_dns::rdata::RData::DNAME(simple_dns::rdata::DNAME::from(dname)),
                     //     ));
                     // }
-                    // "RRSIG" => {
-                    //     // RRSIG expects algorithm, labels, original_ttl, signature_expiration, signature_inception, key_tag, and signer_name
-                    //     let algorithm = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let labels = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let original_ttl = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let signature_expiration = msgpart.get(20).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let signature_inception = msgpart.get(21).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let key_tag = msgpart.get(22).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let signer_name = Name::new(msgpart.get(23).unwrap_or(&"")).unwrap();
-                    //     reply.answers.push(ResourceRecord::new(
-                    //         question.qname.clone(),
-                    //         simple_dns::CLASS::IN,
-                    //         msgparts[3].parse().unwrap_or(120),
-                    //         simple_dns::rdata::RData::RRSIG(simple_dns::rdata::RRSIG {
-                    //             algorithm,
-                    //             labels,
-                    //             original_ttl,
-                    //             signature_expiration,
-                    //             signature_inception,
-                    //             key_tag,
-                    //             signer_name,
-                    //         }),
-                    //     ));
-                    // }
-                    // "DS" => {
-                    //     // DS expects key_tag, algorithm, digest_type, and digest
-                    //     let key_tag = msgpart.get(17).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let algorithm = msgpart.get(18).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let digest_type = msgpart.get(19).unwrap_or(&"0").parse().unwrap_or(0);
-                    //     let digest = msgpart.get(20).map(|s| s.to_string()).unwrap_or_default();
-                    //     reply.answers.push(ResourceRecord::new(
-                    //         question.qname.clone(),
-                    //         simple_dns::CLASS::IN,
-                    //         msgparts[3].parse().unwrap_or(120),
-                    //         simple_dns::rdata::RData::DS(simple_dns::rdata::DS {
-                    //             key_tag,
-                    //             algorithm,
-                    //             digest_type,
-                    //             digest: std::borrow::Cow::from(digest.as_bytes()),
-                    //         }),
-                    //     ));
-                    // }
+                    "RRSIG" => { // https://www.rfc-editor.org/rfc/rfc4034.html#section-3
+                        use chrono::NaiveDateTime;
+
+                        // RRSIG expects type_covered, algorithm, labels, original_ttl, signature_expiration, signature_inception, key_tag, signer_name, signature
+                        let type_covered = match msgparts.get(5).map(|s| s.to_ascii_uppercase()) {
+                            Some(ref s) if s == "A" => 1,
+                            Some(ref s) if s == "NS" => 2,
+                            Some(ref s) if s == "MD" => 3,
+                            Some(ref s) if s == "MF" => 4,
+                            Some(ref s) if s == "CNAME" => 5,
+                            Some(ref s) if s == "SOA" => 6,
+                            Some(ref s) if s == "PTR" => 12,
+                            Some(ref s) if s == "HINFO" => 13,
+                            Some(ref s) if s == "MX" => 15,
+                            Some(ref s) if s == "TXT" => 16,
+                            Some(ref s) if s == "AAAA" => 28,
+                            Some(s) => {
+                                tracing::warn!("Unknown type_covered: {}", s);
+                                0
+                            },
+                            None => 0,
+                        };
+                        let algorithm = match msgparts.get(6).map(|s| s.to_ascii_uppercase()) {
+                            Some(ref s) if s == "RSAMD5" => 1,
+                            Some(ref s) if s == "DH" => 2,
+                            Some(ref s) if s == "DSA" => 3,
+                            Some(ref s) if s == "ECC" => 4,
+                            Some(ref s) if s == "RSASHA1" => 5,
+                            Some(ref s) if s == "DSA-NSEC3-SHA1" => 6,
+                            Some(ref s) if s == "RSASHA1-NSEC3-SHA1" => 7,
+                            Some(ref s) if s == "RSASHA256" => 8,
+                            Some(ref s) if s == "RSASHA512" => 10,
+                            Some(ref s) if s == "ECC-GOST" => 12,
+                            Some(ref s) if s == "ECDSAP256SHA256" => 13,
+                            Some(ref s) if s == "ECDSAP384SHA384" => 14,
+                            Some(ref s) if s == "ED25519" => 15,
+                            Some(ref s) if s == "ED448" => 16,
+                            Some(ref s) if s == "INDIRECT" => 252,
+                            Some(ref s) if s == "PRIVATEDNS" => 253,
+                            Some(ref s) if s == "PRIVATEOID" => 254,
+                            Some(s) => {
+                                tracing::warn!("Unknown algorithm: {}", s);
+                                0
+                            },
+                            None => 0,
+                        };
+                        let labels = msgparts.get(7).map(|s| s.matches('.').count() as u8).unwrap_or(0);
+                        let labels = if labels > 1 { labels - 1 } else { labels };
+                        let original_ttl = msgparts.get(3).unwrap_or(&"0").parse().unwrap_or(0);
+                        let v = NaiveDateTime::parse_from_str(msgparts.get(8).unwrap_or(&"0"), "%Y%m%d%H%M%S").ok();
+                        let signature_expiration = v.map(|dt| dt.timestamp() as u32).unwrap_or(0);
+                        let v = NaiveDateTime::parse_from_str(msgparts.get(9).unwrap_or(&"0"), "%Y%m%d%H%M%S").ok();
+                        let signature_inception = v.map(|dt| dt.timestamp() as u32).unwrap_or(0);
+                        // let signature_expiration = msgparts.get(8).unwrap_or(&"0").parse().unwrap_or(0);
+                        // let signature_inception = msgparts.get(9).unwrap_or(&"0").parse().unwrap_or(0);
+                        let key_tag = msgparts.get(10).unwrap_or(&"0").parse().unwrap_or(0);
+                        let signer_name = Name::new(msgparts.get(7).unwrap_or(&"")).unwrap();
+                        let signature = msgparts.get(11).unwrap_or(&"").as_bytes().to_vec().into();
+                        tracing::debug!("rrsig val: {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}", type_covered, algorithm, labels, original_ttl, signature_expiration, signature_inception, key_tag, signer_name, signature);
+                        reply.answers.push(ResourceRecord::new(
+                            question.qname.clone(),
+                            simple_dns::CLASS::IN,
+                            msgparts[3].parse().unwrap_or(120),
+                            simple_dns::rdata::RData::RRSIG(simple_dns::rdata::RRSIG {
+                                type_covered,
+                                algorithm,
+                                labels,
+                                original_ttl,
+                                signature_expiration,
+                                signature_inception,
+                                key_tag,
+                                signer_name,
+                                signature,
+                            }),
+                        ));
+                    }
+                    "DNSKEY" => { // https://www.rfc-editor.org/rfc/rfc4034.html#section-2
+                        // DNSKEY expects flags, protocol, algorithm, and public key
+                        let flags = match msgparts.get(5).map(|s| s.to_ascii_uppercase()) {
+                            Some(ref s) if s == "ZSK" => 256,
+                            Some(ref s) if s == "KSK" => 257,
+                            Some(s) => s.parse().unwrap_or(0),
+                            None => 0,
+                        };
+                        let protocol = msgparts.get(6).unwrap_or(&"0").parse().unwrap_or(0);
+                        let algorithm = match msgparts.get(7).map(|s| s.to_ascii_uppercase()) {
+                            Some(ref s) if s == "RSAMD5" => 1,
+                            Some(ref s) if s == "DSA" => 3,
+                            Some(ref s) if s == "RSASHA1" => 5,
+                            Some(ref s) if s == "DSA-NSEC3-SHA1" => 6,
+                            Some(ref s) if s == "RSASHA1-NSEC3-SHA1" => 7,
+                            Some(ref s) if s == "RSASHA256" => 8,
+                            Some(ref s) if s == "RSASHA512" => 10,
+                            Some(ref s) if s == "ECC-GOST" => 12,
+                            Some(ref s) if s == "ECDSAP256SHA256" => 13,
+                            Some(ref s) if s == "ECDSAP384SHA384" => 14,
+                            Some(ref s) if s == "ED25519" => 15,
+                            Some(ref s) if s == "ED448" => 16,
+                            Some(s) => s.parse().unwrap_or(0),
+                            None => 0,
+                        };
+                        let public_key = msgparts.get(8).map(|s| s.to_string()).unwrap_or_default();
+                        tracing::debug!("dnskey val: {:?}, {:?}, {:?}, {:?}", flags, protocol, algorithm, public_key);
+                        reply.answers.push(ResourceRecord::new(
+                            question.qname.clone(),
+                            simple_dns::CLASS::IN,
+                            msgparts[3].parse().unwrap_or(120),
+                            simple_dns::rdata::RData::DNSKEY(simple_dns::rdata::DNSKEY {
+                                flags,
+                                protocol,
+                                algorithm,
+                                public_key: std::borrow::Cow::from(public_key.as_bytes().to_vec()),
+                            }),
+                        ));
+                    }
+                    "DS" => { // https://www.rfc-editor.org/rfc/rfc4034.html#section-5.1
+                        // DS cannot by used
+                        // if server sends digest of BE7435995466069D5C63D20C39F5603827D7DD2B56F12EE9F3A86764247C
+                        // client receives           BE743599546669D5C63D2C39F5603827D7DD2B56F12EE9F3A86764247C
+                        // DS expects key_tag, algorithm, digest_type, and digest
+                        let key_tag = msgparts.get(5).unwrap_or(&"0").parse().unwrap_or(0);
+                        let algorithm = match msgparts.get(6).map(|s| s.to_ascii_uppercase()) {
+                            Some(ref s) if s == "RSAMD5" => 1,
+                            Some(ref s) if s == "DSA" => 3,
+                            Some(ref s) if s == "RSASHA1" => 5,
+                            Some(ref s) if s == "DSA-NSEC3-SHA1" => 6,
+                            Some(ref s) if s == "RSASHA1-NSEC3-SHA1" => 7,
+                            Some(ref s) if s == "RSASHA256" => 8,
+                            Some(ref s) if s == "RSASHA512" => 10,
+                            Some(ref s) if s == "ECC-GOST" => 12,
+                            Some(ref s) if s == "ECDSAP256SHA256" => 13,
+                            Some(ref s) if s == "ECDSAP384SHA384" => 14,
+                            Some(ref s) if s == "ED25519" => 15,
+                            Some(ref s) if s == "ED448" => 16,
+                            Some(s) => s.parse().unwrap_or(0),
+                            None => 0,
+                        };
+                        let digest_type = msgparts.get(7).unwrap_or(&"0").parse().unwrap_or(0); // digest type 0 - reserved, 1 - SHA-1, 2 - SHA-256, 3 - GOST R 34.11-94
+                        // let digest = msgparts.get(8).unwrap_or(&"").as_bytes().to_vec().into();
+                        let digest_str = msgparts.get(8).unwrap_or(&"");
+                        let digest_hex = hex::decode(digest_str).unwrap_or_default();
+                        tracing::debug!("digest {:?}, {:?}", digest_hex, digest_str);
+                        let digest = std::borrow::Cow::from(digest_hex.clone());
+                        tracing::debug!("ds val: {:?}, {:?}, {:?}, {:?}, {:?}", key_tag, algorithm, digest_type, digest_str, digest);
+                        reply.answers.push(ResourceRecord::new(
+                            question.qname.clone(),
+                            simple_dns::CLASS::IN,
+                            msgparts[3].parse().unwrap_or(120),
+                            simple_dns::rdata::RData::DS(simple_dns::rdata::DS {
+                                key_tag,
+                                algorithm,
+                                digest_type,
+                                digest,
+                            }),
+                        ));
+                        // let replybytes = reply.build_bytes_vec();
+                        // tracing::debug!("reply packet bytes {:?}",replybytes)
+                    }
                     // "NSEC" => {
                     //     // NSEC expects next_domain_name and type_bit_maps
                     //     let next_domain_name = Name::new(msgparts[5]).unwrap();

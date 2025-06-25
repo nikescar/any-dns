@@ -52,6 +52,9 @@ TXT
 SVCB
 HTTPS
 CAA
+DNSKEY
+RRSIG
+DS
 ```
 
 ## Todo
@@ -66,12 +69,9 @@ ZONEMD >>
 KX >>
 IPSECKEY >>
 DNAME
-RRSIG >>
-DS >>
 NSEC
 DHCID >>
 -----------------
-DNSKEY >>
 ISDN >>
 MINFO >>
 NSAP >>

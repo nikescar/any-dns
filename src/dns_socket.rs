@@ -110,7 +110,7 @@ impl DnsSocket {
         tokio::spawn(async move {
             let start = Instant::now();
             let query_packet = Packet::parse(&data).unwrap();
-            let span = tracing::span!(Level::DEBUG, "", query_id = query_packet.id());
+            let span = tracing::span!(Level::TRACE, "", query_id = query_packet.id());
             let guard = span.enter();
 
             let question = query_packet.questions.first();
@@ -128,6 +128,9 @@ impl DnsSocket {
                 question.qtype
             );
             let query_result = socket.on_query(&data, &from).await;
+                // tracing::trace!("query packet: {:?}", query_packet);
+                // tracing::trace!("query data: {:?}", data);
+                // tracing::trace!("query result: {:?}", query_result);
                 match query_result {
                     Ok(_) => {
                         tracing::debug!(
@@ -170,6 +173,7 @@ impl DnsSocket {
     pub async fn query(&mut self, query: &Vec<u8>) -> Result<Vec<u8>, RequestError> {
         tracing::trace!("Try to resolve the query with the custom handler.");
         let result = self.handler.call(query, self.clone()).await;
+        tracing::trace!("Custom handler result {:?}", result);  
         if let Ok(reply) = result {
             tracing::trace!("Custom handler resolved the query.");
             // All good. Handler handled the query
